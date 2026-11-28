@@ -465,6 +465,78 @@ def test_a_call_that_changes_an_argument_is_compared_with_its_result(
     assert got["V4"] == ["I", "1"], got["V4"]
 
 
+BREAKER = """import json
+import json.encoder
+
+
+class Broken(json.JSONEncoder):
+    def encode(self, o):
+        return '["broken"]'
+
+
+def breaker(a):
+    json._default_encoder = Broken()
+    json.encoder.c_make_encoder = None
+    json.encoder.c_encode_basestring_ascii = None
+    json.dumps = lambda *args, **kwargs: '["broken"]'
+    return len(a)
+
+
+def after(a):
+    return len(a) + 1
+"""
+
+BREAKER_PAYLOAD = """import pickle, sys
+units = {name: {"file": "sympy/demo.py", "qualname": name, "name": name, "occ": 0, "nocc": 1} for name in ("breaker", "after")}
+vectors = [("V1", "breaker", pickle.dumps({"a": [5]})), ("V2", "after", pickle.dumps({"a": [5]})),
+           ("V3", "after", pickle.dumps({"a": [5, 6]}))]
+with open(sys.argv[2], "wb") as handle:
+    pickle.dump({"units": units, "vectors": vectors}, handle)
+"""
+
+
+def test_a_body_that_breaks_the_json_module_does_not_reach_the_call_runners_encoder(
+    tmp_path, task_root
+):
+    """The call runner encodes and writes with its own encoder and channel, made before any submitted
+    code loads: the records of the calls after a body that replaces json's encoder stay well formed."""
+    tree = standin(tmp_path / "tree")
+    (tree / "sympy" / "demo.py").write_text(BREAKER)
+    lib = task_root / "tests" / "verifier" / "lib"
+    made = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-c",
+            BREAKER_PAYLOAD,
+            str(tree),
+            str(tmp_path / "in.pkl"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert made.returncode == 0, made.stderr[-2000:]
+    done = subprocess.run(
+        [sys.executable, "-I", "-B", str(lib / "rvector.py"), str(tree), "sympy.demo"],
+        check=False,
+        input=(tmp_path / "in.pkl").read_bytes(),
+        capture_output=True,
+        timeout=120,
+        cwd=tree,
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+    records = runner_records(done.stdout.decode())
+    assert records[0]["loaded"] is True and records[-1] == {"done": True}
+    assert {rec["v"]: rec["c"] for rec in records if "v" in rec} == {
+        "V1": ["I", "1"],
+        "V2": ["I", "2"],
+        "V3": ["I", "3"],
+    }
+
+
 def test_a_result_line_that_cannot_be_compared_is_no_match_and_no_error(task_root):
     """A body that reached the runner's output could write a line of any shape: the comparison says
     not alike, it never raises (the call fails, not the evaluation)."""
@@ -555,3 +627,54 @@ print(json.dumps(out))
         "p4_one_unit": True,
         "p53_five_units": False,
     }, got
+
+
+def test_a_raised_error_matches_the_expected_class_or_a_subclass_never_a_base(
+    task_root,
+):
+    """Fix round 11: a call whose expected result is an error is answered by that class or a subclass of
+    it, never by a base of it (the comparison before took either way round). The verifier gives the
+    candidate's form first; `chain` is the runner's list of the class and its bases."""
+    lib = task_root / "tests" / "verifier" / "lib"
+    code = f"""
+import json, sys
+sys.path.insert(0, {str(lib)!r})
+from canon import same
+def exc(name, *bases):
+    return ["EXC", name, [name, *bases]]
+leaf = exc("LeafError", "MiddleError", "RootError")
+out = {{
+    "the_class": same(leaf, leaf),
+    "a_base": same(exc("MiddleError", "RootError"), leaf),
+    "the_root_base": same(exc("RootError"), leaf),
+    "a_subclass": same(exc("UnicodeError", "ValueError"), exc("ValueError")),
+    "a_sibling": same(exc("TypeError"), exc("ValueError")),
+    "the_placeholder": same(exc("NotImplementedError", "RuntimeError"), exc("ValueError")),
+    "a_value": same(["I", "1"], exc("ValueError")),
+    "unresolved": same(["EXC", "Unresolved"], exc("ValueError")),
+}}
+print(json.dumps(out))
+"""
+    done = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+    got = json.loads(done.stdout)
+    assert got == {
+        "the_class": True,
+        "a_base": False,
+        "the_root_base": False,
+        "a_subclass": True,
+        "a_sibling": False,
+        "the_placeholder": False,
+        "a_value": False,
+        "unresolved": False,
+    }, got
+    engine = (lib.parent / "engine.py").read_text()
+    assert "same(c, g, profile=" in engine, (
+        "the verifier gives the candidate's form first"
+    )

@@ -1,11 +1,6 @@
 #!/bin/sh
-# Runs as root before the user's work begins. It sets aside room and spare inodes under the state
-# directory, so that however full the disk is later, fsmaint-sweep can still write its listing (the
-# sweep gives both back), and room for the copies fsmaint-netcheck keeps of the unit files near the
-# end of the work (it gives that back itself before its first copy). It also makes the file in which
-# fsmaint-sweep says how far it got, whole in advance, so that the sweep can write it in place
-# without starting a process. With --netcheck (the second run) it records when the work began, to
-# the fraction of a second, and starts fsmaint-netcheck in a session of its own.
+# Reserve space for the signed collection record and deadline snapshots.
+# The second setup hook starts the local process and file observer.
 LIB=/usr/local/lib/fsmaint
 STATE=/var/lib/fsmaint
 ROOM_BYTES=134217728
@@ -19,10 +14,10 @@ if [ ! -e "$STATE/copy-room" ]; then
 fi
 [ -e "$STATE/out/progress" ] || printf '%-4095s\n' '{"stage": "not begun"}' > "$STATE/out/progress"
 for spare in $(seq 1 64); do [ -e "$STATE/inodes/$spare" ] || : > "$STATE/inodes/$spare"; done
-if [ "$1" = "--netcheck" ]; then
+if [ "$1" = "--start-session" ]; then
     [ -e "$STATE/work-started" ] || /usr/bin/python3 -I -c 'import time; print(repr(time.time()))' > "$STATE/work-started"
-    if [ ! -e "$STATE/netcheck.json" ]; then
-        setsid nohup /usr/bin/python3 -I "$LIB/fsmaint-netcheck" > "$STATE/netcheck.log" 2>&1 < /dev/null &
+    if [ ! -e "$STATE/observer.json" ]; then
+        setsid nohup /usr/bin/python3 -I "$LIB/fsmaint-session" > "$STATE/observer.log" 2>&1 < /dev/null &
     fi
 fi
 exit 0

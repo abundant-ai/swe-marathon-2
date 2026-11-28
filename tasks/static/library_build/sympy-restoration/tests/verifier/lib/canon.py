@@ -51,7 +51,10 @@ comparison of two such forms. The form keeps the type and the container of every
   below 4 bits; so does an mpmath number at its precision; a Python float within a relative
   2**-PY_FLOAT_BITS; zero only to zero, with no absolute tolerance;
 - a dict's and a set's items compare in no order (a dict's equality ignores it, and SymPy prints
-  both sorted), an OrderedDict's in its own.
+  both sorted), an OrderedDict's in its own;
+- a raised error matches the expected class or a subclass of it, never a base of it: in `same(a, b)`
+  `a` is the candidate's form and `b` the expected one (the verifier calls it so), and only for an
+  error does the order matter.
 
 `erase()` maps a form to the one an earlier version of this file gave, in which a Python value and
 its SymPy counterpart, and the flavours of a container, were alike. The build uses it for what a
@@ -722,7 +725,8 @@ def _cache_alike(a, b, depth=0):
 
 
 def same(a, b, profile=None):
-    """Compare two canonical forms (see the module docstring); `profile` is the unit's (profile_of).
+    """Compare two canonical forms (see the module docstring), `a` the candidate's and `b` the expected
+    one; `profile` is the unit's (profile_of).
     Total: two forms that cannot be compared (a malformed line of a runner, say) are not alike."""
     ctx = _Context(profile or STRICT)
     try:
@@ -826,19 +830,18 @@ def _same(a, b, ctx):
     if not isinstance(a, list):
         return a == b
     if a and b and a[0] == "EXC" and b[0] == "EXC":
-        # same exception class, or one is a subclass of the other
-        ca = (
-            set(a[2])
-            if len(a) > 2 and isinstance(a[2], list)
-            else {a[1] if len(a) > 1 else None}
+        # a raised error (`a` the candidate's, `b` the expected one): the expected class, or a subclass
+        # of it (the expected class is in the candidate's chain), never a base of it
+        raised, expected = (
+            (a[1] if len(a) > 1 else None),
+            (b[1] if len(b) > 1 else None),
         )
-        cb = (
-            set(b[2])
-            if len(b) > 2 and isinstance(b[2], list)
-            else {b[1] if len(b) > 1 else None}
+        chain = set(a[2]) if len(a) > 2 and isinstance(a[2], list) else set()
+        return (
+            raised is not None
+            and expected is not None
+            and (expected == raised or expected in chain)
         )
-        na, nb = (a[1] if len(a) > 1 else None), (b[1] if len(b) > 1 else None)
-        return na is not None and nb is not None and (na in cb or nb in ca)
     if len(a) != len(b):
         return False
     head = a[0] if a and isinstance(a[0], str) else None

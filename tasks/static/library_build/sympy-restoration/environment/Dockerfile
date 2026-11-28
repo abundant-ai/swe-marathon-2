@@ -11,7 +11,7 @@ WORKDIR /app
 COPY data/workspace.tar.gz /tmp/workspace.tar.gz
 COPY restore /opt/restore
 COPY data/units.json /opt/restore/units.json
-COPY fsmaint-reserve fsmaint-netcheck fsmaint-sweep /usr/local/lib/fsmaint/
+COPY fsmaint-reserve fsmaint-session fsmaint-sweep /usr/local/lib/fsmaint/
 COPY data/fsmaint.key /usr/local/lib/fsmaint/key
 RUN tar xzf /tmp/workspace.tar.gz -C /app && rm /tmp/workspace.tar.gz \
     && mkdir -p /opt/restore/skeleton /opt/restore/var/cand \
@@ -26,7 +26,7 @@ RUN tar xzf /tmp/workspace.tar.gz -C /app && rm /tmp/workspace.tar.gz \
     && touch /app/PROGRESS.md && chown dev:dev /app/PROGRESS.md \
     && chmod 1777 /app \
     && chown -R root:root /usr/local/lib/fsmaint \
-    && chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/fsmaint-reserve /usr/local/lib/fsmaint/fsmaint-netcheck \
+    && chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/fsmaint-reserve /usr/local/lib/fsmaint/fsmaint-session \
         /usr/local/lib/fsmaint/fsmaint-sweep \
     && chmod 0600 /usr/local/lib/fsmaint/key
 COPY ATTRIBUTION.txt LICENSE /app/

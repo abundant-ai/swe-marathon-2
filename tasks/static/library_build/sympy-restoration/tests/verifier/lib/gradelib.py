@@ -88,7 +88,18 @@ class Child:
                 return "bad", None
             left = deadline - time.monotonic()
             if left <= 0:
-                return "timeout", None
+                # a pause of this process (a garbage collection, the machine) can keep it from reading an
+                # answer that came in time: what is already waiting is read once more, without blocking,
+                # and a complete line there is taken
+                if self._read_waiting() == "bad":
+                    return "bad", None
+                if self.buffer.find(b"\n") >= 0:
+                    continue
+                return (
+                    ("bad", None)
+                    if len(self.buffer) > self.line_limit
+                    else ("timeout", None)
+                )
             try:
                 ready, _, _ = select.select([self.fd], [], [], min(left, 1.0))
             except (OSError, ValueError):
@@ -107,6 +118,22 @@ class Child:
             if self.total > self.total_limit:
                 return "bad", None
             self.buffer += chunk
+
+    def _read_waiting(self) -> str | None:
+        """Read what the runner has already written, without blocking, up to a complete line or the
+        limits: "bad" past the total limit, else None (the end of its output is left to message())."""
+        while self.buffer.find(b"\n") < 0 and len(self.buffer) <= self.line_limit:
+            try:
+                chunk = os.read(self.fd, 1 << 16)
+            except (BlockingIOError, OSError):
+                return None
+            if not chunk:
+                return None
+            self.total += len(chunk)
+            if self.total > self.total_limit:
+                return "bad"
+            self.buffer += chunk
+        return None
 
     def stop(self) -> None:
         """End the runner and everything it started in its session."""
@@ -234,7 +261,14 @@ def run_doctests(
     cand_root = os.path.abspath(cand_root)
     results, bad, unreached = {}, [], set()
     lock = threading.Lock()
-    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "malformed": 0}
+    counts = {
+        "starts": 0,
+        "timeouts": 0,
+        "ended_or_stopped": 0,
+        "malformed": 0,
+        "over_half_bound": 0,
+    }
+    near = set()  # units whose examples took more than half their time, as this process measured it
 
     def count(name):
         with lock:
@@ -299,6 +333,7 @@ def run_doctests(
                     until = min(deadline, time.monotonic() + bound(name) + GRACE_SEC)
                     kind, found = child.message(until)
                     started = kind == "message" and found.get("start") == name
+                    began = time.monotonic()
                     if started:
                         kind, found = child.message(until)
                     rebuilt = (
@@ -306,6 +341,13 @@ def run_doctests(
                         if started and kind == "message"
                         else None
                     )
+                    if (
+                        rebuilt is not None
+                        and time.monotonic() - began > bound(name) / 2
+                    ):
+                        count("over_half_bound")
+                        with lock:
+                            near.add(name)
                     if rebuilt is not None:
                         record, trip = rebuilt
                         if not trip:
@@ -348,7 +390,7 @@ def run_doctests(
                         out[name] = {
                             "name": name,
                             "status": "crash",
-                            "exc": "the runner wrote too much"
+                            "exc": "the runner wrote something that is not a record"
                             if kind == "bad"
                             else "the runner ended during this unit",
                         }
@@ -374,6 +416,7 @@ def run_doctests(
                 }
     if stats is not None:
         stats.update(counts)
+        stats["over_half_bound_units"] = sorted(near)[:100]
     return results, bad, unreached
 
 

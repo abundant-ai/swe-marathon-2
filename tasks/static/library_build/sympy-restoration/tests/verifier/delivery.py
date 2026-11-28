@@ -52,9 +52,8 @@ PROGRESS = Path(
 PROGRESS_LIMIT = 4096
 MARK_LIMIT = 1 << 20  # bytes of the mark read, at most
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
-SKEW_SEC = 0.25  # a change this close before the end bound counts as after it
 WORK_LIMIT_SEC = (
-    34560  # the time the work is given: no end of it is later than its start plus this
+    43200  # the time the work is given: no end of it is later than its start plus this
 )
 PUBLIC_HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
 END_SOURCES = ("netcheck", "collect", "session", "limit", "unchanged")
@@ -302,17 +301,22 @@ def read_delivery(top: Path, key_path: Path, progress: Path = PROGRESS) -> Deliv
         raise EvaluationError(
             "The collect step took its own start as the end of the work although public hosts were not seen closed"
         )
+    if (record.get("net_probe") or {}).get("any_open") is True:
+        raise EvaluationError(
+            "The development container had public network access during collection"
+        )
     limit = work_limit(record)
     if limit is not None and delivery.end_bound > limit:
         delivery.end_bound, delivery.end_from = limit, "limit"
-    cutoff = delivery.end_bound - SKEW_SEC
     for path, item in listed.items():
         times = [
             t
             for t in (item.get("ctime"), item.get("mtime"))
             if isinstance(t, (int, float))
         ]
-        if item.get("type") == "file" and (not times or max(times) >= cutoff):
+        if item.get("type") == "file" and (
+            not times or max(times) > delivery.end_bound
+        ):
             delivery.late.add(path)
         copied = item.get("copied")
         if isinstance(copied, dict) and path not in delivery.late:
@@ -348,21 +352,25 @@ def read_delivery(top: Path, key_path: Path, progress: Path = PROGRESS) -> Deliv
 
 
 def work_limit(record: dict) -> float | None:
-    """The time the work is given ran out: the start of the first process of the work the collect step
-    counted from (at or after the start of the work, before the collect step), else the start of the
-    work, plus WORK_LIMIT_SEC; None without a start of the work."""
+    """Calculate the 12-hour limit from the signed collection timestamps.
+
+    Args:
+        record: Collector metadata with setup, first confirmed process and sweep times.
+
+    Returns:
+        The Unix deadline, or None when setup did not record a start time.
+    """
     started = record.get("work_started")
     if not isinstance(started, (int, float)) or isinstance(started, bool):
         return None
-    bound = record.get("limit_bound")
+    first = ((record.get("sessions") or {}).get("first_process") or {}).get("start")
     sweep = record.get("sweep_started_at")
     if (
-        isinstance(bound, (int, float))
-        and not isinstance(bound, bool)
+        isinstance(first, (int, float))
         and isinstance(sweep, (int, float))
-        and started - 1 <= bound - WORK_LIMIT_SEC <= sweep
+        and started <= first <= sweep
     ):
-        return float(bound)
+        started = first
     return started + WORK_LIMIT_SEC
 
 

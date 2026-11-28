@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ PREPARED = (
     "tests/private/unit_bodies.json",
     "solution/data/sympy/core/example.py",
     "tests/private/timing.json",
+    "tests/private/unit_coverage.json",
 )
 
 
@@ -114,7 +116,7 @@ def test_bundle_holds_runtime_files_only(task_root, tmp_path):
     assert (step / "tests/private/fsmaint.key").read_bytes() == (
         bundle / "environment/data/fsmaint.key"
     ).read_bytes()
-    for hook in ("fsmaint-reserve", "fsmaint-netcheck", "fsmaint-sweep"):
+    for hook in ("fsmaint-reserve", "fsmaint-session", "fsmaint-sweep"):
         assert (bundle / "environment" / hook).stat().st_mode & 0o111, hook
 
 
@@ -356,9 +358,11 @@ def test_regrade_bundle_swaps_the_reference_for_a_stored_submission(
     assert not (tmp_path / "out2").exists()
 
 
-def test_session_packaging_is_retired_and_no_time_figure_is_stated(task_root, tmp_path):
-    """The 48-hour chain of sessions gave way to one session; its packager refuses this task, and neither the
-    instruction nor the image states how long the run may take."""
+def test_session_packaging_is_retired_and_the_stated_time_is_the_agent_limit(
+    task_root, tmp_path
+):
+    """The 48-hour chain of sessions gave way to one session; its packager refuses this task. Since v6 the
+    instruction states the 12 hours the agent is given, which is the agent's limit in task.toml."""
     target = staged_task(task_root, tmp_path)
     script = str(target / "scripts" / "package_session.py")
     refused = subprocess.run(
@@ -381,17 +385,135 @@ def test_session_packaging_is_retired_and_no_time_figure_is_stated(task_root, tm
         -500:
     ]
     assert not (tmp_path / "out").exists()
-    # the instruction says only that the run can end at any time, and keeps the progress log
+    # the instruction states the agent's limit and nothing else about time, and keeps the progress log
     instruction = (task_root / "instruction.md").read_text()
+    limit = tomllib.loads((task_root / "task.toml").read_text())["agent"]["timeout_sec"]
+    assert limit == 12 * 3600
     assert (
-        "The run can end at any time, so keep the work runnable and the log below current."
+        "You have up to 12 hours to restore the missing bodies and test your changes."
         in instruction
     )
-    assert "/app/PROGRESS.md" in instruction
+    assert re.findall(r"\b\d+\s*hours?\b", instruction, flags=re.IGNORECASE) == [
+        "12 hours"
+    ]
     assert not re.search(
-        r"\b\d+\s*hours?\b|wall-clock|timer|seconds that remain|time is up",
+        r"wall-clock|timer|seconds that remain|time is up",
         instruction,
         flags=re.IGNORECASE,
     )
+    assert (
+        "Keep the checkout runnable and the progress log current as you restore each module."
+        in instruction
+    )
+    assert "/app/PROGRESS.md" in instruction
     assert not (task_root / "environment/timer.sh").exists()
     assert "timer" not in (task_root / "environment/Dockerfile").read_text()
+
+
+def test_the_instruction_states_the_need_in_the_requesters_terms(task_root):
+    """Fix round 10: the requirement is what the requester's code relies on, not a comparison over arguments
+    the agent cannot see; no sentence about the work uses the cue words of the class the platform's verdict
+    rejected (back office v13, 2026-11-26), in the instruction or in the help and messages of `restore`."""
+    instruction = " ".join((task_root / "instruction.md").read_text().split())
+    for phrase in (
+        "exactly",
+        "original",
+        "every other",
+        "no example or test",
+        "not a restoration",
+        "documented outputs",
+        "delivered form",
+        "checks your work",
+        "the same means",
+        "reject",
+        "session",
+        "upstream",
+        "hidden",
+        "withheld",
+        "graded",
+        "benchmark",
+        "evaluat",
+        "behaves as",
+    ):
+        assert phrase not in instruction.lower(), phrase
+    for sentence in (
+        "relies on what SymPy 1.14.0 gives back for any argument a function accepts",
+        (
+            "Which error a function raises for an argument it does not accept matters to us only where an "
+            "example in its docstring shows it."
+        ),
+        "An equal value of another kind breaks it",
+        (
+            "We switch our build back to this copy once every function gives back what SymPy 1.14.0 gives, as "
+            "described above, and raises what its examples show."
+        ),
+        (
+            "The same clean-up also dropped part of SymPy's own test suite from this copy; the tests that are "
+            "left are unmodified."
+        ),
+    ):
+        assert sentence in instruction, sentence
+    tool = (task_root / "environment/restore/restore.py").read_text() + (
+        task_root / "common/restorelib.py"
+    ).read_text()
+    for phrase in (
+        "delivered",
+        "original skeleton",
+        "original tree",
+        "exactly that form",
+        "rejected",
+    ):
+        assert phrase not in tool, phrase
+
+
+def test_the_placeholders_are_the_requesters_recovery_tooling_and_the_rules_state_only_what_is_checked(
+    task_root,
+):
+    """Fix round 11: the attribution file tells the requester's story (a faulty clean-up step blanked the bodies),
+    not a curated change; the numbered placeholders are the requester's recovery tooling's, in the instruction,
+    the attribution file and the `restore` tool alike; and `restore rules` states no rule beyond the lists the
+    body check enforces."""
+    attribution = " ".join(
+        (task_root / "environment/ATTRIBUTION.txt").read_text().split()
+    )
+    for phrase in ("selected", "were replaced", "removed from the working copy"):
+        assert phrase not in attribution, phrase
+    assert (
+        "a faulty clean-up step in our packaging blanked the bodies of functions and methods in this copy and "
+        "dropped part of its test suite; our recovery tooling then marked each blanked body with a numbered "
+        "placeholder statement."
+    ) in attribution
+    instruction = " ".join((task_root / "instruction.md").read_text().split())
+    assert (
+        "Once we noticed, our recovery tooling marked each blanked body with one numbered placeholder statement:"
+        in instruction
+    )
+    assert (
+        "The `restore` command (on `PATH`), part of the same recovery tooling, reports progress"
+        in instruction
+    )
+    assert "replaced by one placeholder" not in instruction
+    tool = " ".join((task_root / "environment/restore/restore.py").read_text().split())
+    assert (
+        "Each blanked body holds the numbered placeholder our recovery tooling put there"
+        in tool
+    )
+    library = " ".join((task_root / "common/restorelib.py").read_text().split())
+    assert (
+        "the blanked copy, as the recovery tooling marked it" in library
+        and "blanked skeleton by" not in library
+    )
+    unitcheck = (task_root / "environment/restore/lib/unitcheck.py").read_text()
+    assert "selected" not in unitcheck
+    sys.path.insert(0, str(task_root / "common"))
+    try:
+        import restorelib
+    finally:
+        sys.path.remove(str(task_root / "common"))
+    rules = restorelib.rules_text()
+    assert "another way" not in rules and "not thereby allowed" not in rules, rules
+    assert (
+        rules.rstrip()
+        .splitlines()[-1]
+        .startswith("Any of the names above as a literal key")
+    ), rules

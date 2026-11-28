@@ -3,15 +3,14 @@ artifacts = ["/app/sympy", "/var/lib/fsmaint/out"]
 
 [task]
 name = "abundant/swe-m2_scientific-computing_sympy-restoration"
-description = "Write back the bodies of 2,671 functions removed from SymPy 1.14.0, without network access, so that the library again behaves as its docstrings and tests say."
+description = "Write back the bodies of 2,115 functions removed from SymPy 1.14.0, without network access, so that the library again behaves as its docstrings and tests say."
 authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "Both images are built with public egress, to install their system packages and Python packages, and the agent's set-up has it too, to install the agent's tooling. The work itself, and the commands run in the second image after it, run without network access."
 
 [agent]
-timeout_sec = 34560
+timeout_sec = 43200
 network_mode = "no-network"
 user = "dev"
 
@@ -21,12 +20,12 @@ user = "root"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"
+command = "/usr/local/lib/fsmaint/fsmaint-reserve --start-session"
 user = "root"
 timeout_sec = 120
 
 [environment]
-network_mode = "public"
+network_mode = "no-network"
 build_timeout_sec = 1800
 cpus = 4
 memory_mb = 16384
@@ -46,7 +45,7 @@ user = "root"
 timeout_sec = 600
 
 [verifier.environment]
-network_mode = "public"
+network_mode = "no-network"
 build_timeout_sec = 1800
 cpus = 4
 memory_mb = 16384
