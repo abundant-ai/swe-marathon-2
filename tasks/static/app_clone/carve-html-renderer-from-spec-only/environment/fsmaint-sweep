@@ -2,27 +2,28 @@
 # Runs as root once the user's work has ended, before /app/rebuild is copied elsewhere. First it
 # writes, into a file of its own that is copied beside the tree, that the sweep has begun. Then it
 # stops every process of the user `dev`, puts a mark into /app/rebuild that says the tree is refused,
-# records and ends those processes; probes whether a few public hosts answer; makes the tree
-# copyable (links); moves the tree out of /app/rebuild, measures and bounds it there, and moves it
-# back under a mark that lists it only when it is within the limits and the disk has room to pack
-# it. Only once that mark is in place does the file beside the tree say the sweep finished. From the
-# move out until then /app/rebuild holds the refused mark and nothing unmeasured, unless the moving
-# out is cut off by its time limit (what was not moved then stays, and the sweep says it stopped);
-# before the move out it holds the tree under the refused mark, as the session left it but for what
-# the link fixing changes, and what was in /logs/artifacts is moved aside. The mark's first line says
-# how many entries and bytes were listed, or that the tree was refused; the record (.fsmaint.json)
-# lists every entry, every link turned into a copy with where the copy came from and when that
-# source last changed, the end of the work (the net check's observation, or the work's start plus
-# the time it is given for a turn that ran to it, whichever came first; nothing is ended at that
-# limit, and what changed after the end does not count), and how the ending of the processes went.
+# records and ends those processes; makes the tree copyable (links); moves the tree out of
+# /app/rebuild, measures and bounds it there, and moves it back under a mark that lists it only when
+# it is within the limits, no thread of `dev` is left alive and the disk has room to pack it. Only
+# once that mark is in place does the file beside the tree say the sweep finished. From the move out
+# until then /app/rebuild holds the refused mark and nothing unmeasured, unless the moving out is
+# cut off by its time limit (what was not moved then stays, and the sweep says it stopped); before
+# the move out it holds the tree under the refused mark, as the session left it but for what the
+# link fixing changes, and what was in /logs/artifacts is moved aside. The mark's first line says how
+# many entries and bytes were listed, or that the tree was refused; the record (.fsmaint.json) lists
+# every entry, every link turned into a copy with where the copy came from and when that source last
+# changed, the end of the work (the work's start plus the time it is given, for a turn that ran to
+# it; else this sweep's start) with every entry changed after it, which is kept and flagged, and how
+# the ending of the processes went.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
-WORK_LIMIT_SECONDS=34560   # the time the work is given, as in task.toml
+WORK_LIMIT_SECONDS=43200   # the time the work is given, as in task.toml
 STATE=/var/lib/fsmaint
 OUT="$STATE/out"   # copied beside the tree: where the sweep got to (sweep.json)
 PROBE="${FSMAINT_SWEEP_PROBE_SECONDS:-10}"     # each process listing or signal, at most
 FREEZE="${FSMAINT_SWEEP_FREEZE_SECONDS:-15}"   # the freezing of the processes, at most
 ENDING="${FSMAINT_SWEEP_KILL_SECONDS:-60}"     # their ending, at most
+PROC="${FSMAINT_PROC:-/proc}"                   # where the processes and their threads are listed
 mkdir -p "$STATE" && chmod 0700 "$STATE"
 started=$(date +%s.%N)
 # Where the sweep has got to, written in place into the 4,096 bytes fsmaint-reserve set aside for
@@ -32,35 +33,59 @@ progress() {
   printf '%-4095s\n' "$1" | dd of="$OUT/sweep.json" bs=4096 count=1 conv=notrunc 2>/dev/null
 }
 progress "{\"stage\": \"started\", \"started_at\": \"$started\"}"
-# The processes of `dev` are found by their state: running, sleeping, waiting on a device, stopped
-# or traced count as alive; a zombie, which holds and does nothing, does not. Each listing and each
-# signal may take PROBE seconds, and a listing that does not answer in time counts as finding one.
-alive() {   # whether a process of `dev` is in one of the states given as $1
-  for who in -u -U; do
-    timeout "$PROBE" pgrep "$who" dev -r "$1" >/dev/null 2>&1
-    [ $? -eq 1 ] || return 0
-  done
-  return 1
+# The processes of `dev` are found by their threads: every task in /proc/*/task whose status names
+# the uid of `dev` (real, effective, saved or filesystem) counts, whatever the state of its process's
+# main thread (a process whose main thread has exited reads as a zombie while its other threads
+# run). `tasks IGNORED` prints how many such tasks are in a state other than those listed (comma
+# separated), or "unknown" where the listing does not answer within PROBE seconds; a zombie or dead
+# task holds and does nothing. Each listing and each signal may take PROBE seconds.
+TASKS=$(cat <<'TASKS'
+import os, pwd, sys
+ignored, proc = set(sys.argv[1].split(",")), sys.argv[2]
+try:
+    uid = str(pwd.getpwnam("dev").pw_uid)
+except KeyError:
+    print(0)
+    raise SystemExit
+count = 0
+for pid in os.listdir(proc):
+    if not pid.isdigit():
+        continue
+    try:
+        threads = os.listdir(f"{proc}/{pid}/task")
+    except OSError:
+        continue
+    for tid in threads:
+        try:
+            with open(f"{proc}/{pid}/task/{tid}/status") as handle:
+                fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        except (OSError, ValueError):
+            continue
+        state = (fields.get("State", "").split() or ["?"])[0]
+        if uid in fields.get("Uid", "").split() and state not in ignored:
+            count += 1
+print(count)
+TASKS
+)
+tasks() {
+  timeout "$PROBE" /usr/bin/python3 -I -c "$TASKS" "$1" "$PROC" 2>/dev/null || echo unknown
 }
-count_alive() {   # how many processes of `dev` are alive, or "unknown" where a listing did not answer
-  found=""
-  for who in -u -U; do
-    pids=$(timeout "$PROBE" pgrep "$who" dev -r R,S,D,T,t 2>/dev/null)
-    [ $? -le 1 ] || { echo unknown; return; }
-    found="$found $pids"
-  done
-  printf '%s\n' $found | sort -u | grep -c .
+alive() {   # whether a task of `dev` is in a state other than those given as $1; "unknown" counts
+  [ "$(tasks "$1")" != 0 ]
 }
 as_dev() {   # a command run as `dev`, within PROBE seconds
   timeout "$PROBE" setpriv --reuid dev --regid dev --clear-groups "$@" >/dev/null 2>&1
 }
 # Freeze the processes of `dev` first, so that none of them runs while the tree is marked and they
 # are listed, then end them all. `kill -9 -1` as that user reaches all of them in one system call,
-# so a process that forks cannot outrun it. Either phase stops once its time is up.
-froze=0
+# so a process that forks cannot outrun it. Each phase makes one pass whatever a listing says, then
+# repeats while a thread of `dev` is still running (or, for the ending, alive), and stops once its
+# time is up.
+as_dev kill -STOP -1
+froze=1
 freeze_out=false
 phase=$(date +%s)
-while alive R,S,D; do
+while alive T,t,Z,X; do
   if [ $(( $(date +%s) - phase )) -ge "$FREEZE" ]; then freeze_out=true; break; fi
   froze=$((froze + 1))
   as_dev kill -STOP -1
@@ -112,42 +137,62 @@ descriptor = os.open(os.path.join(TOP, ".fsmaint"), os.O_WRONLY | os.O_CREAT | o
 with os.fdopen(descriptor, "w") as mark:
     mark.write(f"refused\n{reason or 'the sweep did not finish'}: it was not copied\n")
 EOF
-timeout 20 /usr/bin/python3 -I - "$STATE/procs.json" <<'EOF'
-"""List the processes of the user `dev` (frozen), with their state and command lines."""
+timeout 20 /usr/bin/python3 -I - "$STATE/procs.json" "$PROC" <<'EOF'
+"""List the processes of the user `dev` (frozen), with their state, the states of their threads
+and their command lines; a process counts when its main thread or any other names that user."""
 import json
 import os
 import pwd
 import sys
 import time
 
+PROC = sys.argv[2] if len(sys.argv) > 2 else "/proc"
 try:
     uid = str(pwd.getpwnam("dev").pw_uid)
 except KeyError:
     uid = None
+
+
+def status_of(path):
+    with open(path) as handle:
+        return dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+
+
 processes = []
 try:
-    pids = sorted((name for name in os.listdir("/proc") if name.isdigit()), key=int)
+    pids = sorted((name for name in os.listdir(PROC) if name.isdigit()), key=int)
 except OSError:
     pids = []
 for pid in pids:
     try:
-        with open(f"/proc/{pid}/status") as handle:
-            status = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
-        if uid is None or uid not in status.get("Uid", "").split():
+        status = status_of(f"{PROC}/{pid}/status")
+        threads = {}
+        for tid in os.listdir(f"{PROC}/{pid}/task"):
+            try:
+                task = status_of(f"{PROC}/{pid}/task/{tid}/status")
+            except (OSError, ValueError):
+                continue
+            if uid is not None and uid in task.get("Uid", "").split():
+                state = (task.get("State", "").split() or ["?"])[0]
+                threads[state] = threads.get(state, 0) + 1
+        if uid is None or (uid not in status.get("Uid", "").split() and not threads):
             continue
-        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+        with open(f"{PROC}/{pid}/cmdline", "rb") as handle:
             command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
         processes.append({"pid": int(pid), "ppid": int(status.get("PPid", "0").strip() or 0), "state": status.get("State", "").strip()[:1],
-                          "name": status.get("Name", "").strip(), "command": command[:1000]})
+                          "threads": dict(sorted(threads.items())), "name": status.get("Name", "").strip(), "command": command[:1000]})
     except (OSError, ValueError):
         continue
 with open(sys.argv[1], "w") as handle:
     json.dump({"listed_at": time.time(), "process_count": len(processes), "processes": processes[:500]}, handle)
 EOF
-passes=0
+as_dev kill -9 -1
+timeout "$PROBE" pkill -KILL -u dev >/dev/null 2>&1
+timeout "$PROBE" pkill -KILL -U dev >/dev/null 2>&1
+passes=1
 kill_out=false
 phase=$(date +%s)
-while alive R,S,D,T,t; do
+while alive Z,X; do
   if [ $(( $(date +%s) - phase )) -ge "$ENDING" ]; then kill_out=true; break; fi
   passes=$((passes + 1))
   as_dev kill -9 -1
@@ -155,7 +200,7 @@ while alive R,S,D,T,t; do
   timeout "$PROBE" pkill -KILL -U dev >/dev/null 2>&1
   sleep 0.1
 done
-left=$(count_alive)
+left=$(tasks Z,X)
 ended=$(date +%s.%N)
 printf '{"freeze_passes": %s, "freeze_ran_out": %s, "kill_passes": %s, "kill_ran_out": %s, "processes_left": "%s"}\n' \
   "$froze" "$freeze_out" "$passes" "$kill_out" "$left" > "$STATE/kill.json"
@@ -209,72 +254,25 @@ if report["entries"]:
 with open(os.path.join(STATE, "logs-artifacts.json"), "w") as handle:
     json.dump(report, handle)
 EOF
-# fsmaint-netcheck, if it is still running, has nothing left to do.
-if [ -r "$STATE/netcheck.json" ]; then
-  pid=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pid", ""))' "$STATE/netcheck.json" 2>/dev/null)
-  [ -n "$pid" ] && kill -TERM "$pid" >/dev/null 2>&1
-fi
-# Whether a few public hosts answer from here now, all at once, three seconds in all.
-timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" <<'EOF'
-"""Record whether a TCP connection to port 443 of a few public hosts answers, all tried at once
-within three seconds."""
-import json
-import socket
+# The end of the work, against which the link fixing and the measuring below flag what changed
+# later: for a turn that ran to its limit, the start of the work plus that limit; else this sweep's
+# own start.
+set -- $(/usr/bin/python3 -I - "$started" "$STATE/work-started" "$WORK_LIMIT_SECONDS" <<'EOF'
 import sys
-import threading
-import time
-
-HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
-results = {f"{host}:{port}": "no answer within 3 s" for host, port in HOSTS}
-
-
-def reach(host, port):
-    try:
-        with socket.create_connection((host, port), timeout=3):
-            results[f"{host}:{port}"] = "open"
-    except OSError as exc:
-        results[f"{host}:{port}"] = f"closed ({exc.__class__.__name__})"
-
-
-workers = [threading.Thread(target=reach, args=entry, daemon=True) for entry in HOSTS]
-for worker in workers:
-    worker.start()
-for worker in workers:
-    worker.join(3.5)
-with open(sys.argv[1], "w") as handle:
-    json.dump({"checked_at": time.time(), "hosts": results, "any_open": any(state == "open" for state in results.values())}, handle)
-EOF
-# The end of the work, the bound for the link fixing and the measuring below: the earlier of the net
-# check's record and, for a turn that ran to its limit, the start of the work plus that limit; else
-# this sweep's own start.
-set -- $(/usr/bin/python3 -I - "$STATE/netcheck-open.json" "$started" "$STATE/work-started" "$WORK_LIMIT_SECONDS" <<'EOF'
-import json, sys
-# The end bound, the earliest known of:
-# - `netcheck`: the net check's first observation of a host answering, less the most a poll takes
-#   (at or after the last poll in which none answered); never the time the ending began, which a
-#   later write could precede;
+# The end bound:
 # - `limit`: the start of the work (written at set-up) plus the time the work is given, when this
-#   sweep began after it: the turn ran to its limit, and whatever its processes did after it, until
-#   they were stopped here, is after the end; nothing ends them at the limit itself.
-# Else `start`: the start of this sweep, which precedes its own kill stage.
-started = float(sys.argv[2])
-known = []
+#   sweep began after it: the turn ran to its limit, and what its processes did after it, until they
+#   were stopped here, came after the end; nothing ends them at the limit itself;
+# - else `start`: the start of this sweep, which precedes its own freeze.
+started = float(sys.argv[1])
+bound, origin = started, "start"
 try:
-    record = json.load(open(sys.argv[1]))
-    bound = record.get("end_bound")
-    if bound is None:
-        bound = float(record["first_open_at"]) - float(record.get("poll_seconds", 0.35))
-    known.append((float(bound), "netcheck"))
-except Exception:
-    pass
-try:
-    with open(sys.argv[3]) as handle:
-        limit = float(handle.read().split()[0]) + float(sys.argv[4])
+    with open(sys.argv[2]) as handle:
+        limit = float(handle.read().split()[0]) + float(sys.argv[3])
     if limit < started:
-        known.append((limit, "limit"))
-except Exception:
+        bound, origin = limit, "limit"
+except (OSError, ValueError, IndexError):
     pass
-bound, origin = min(known) if known else (started, "start")
 print(bound, origin)
 EOF
 )
@@ -291,18 +289,16 @@ The copy keeps relative links that stay inside the directory and refuses everyth
 inside it that points elsewhere inside it becomes the relative path to what it resolves to. A link
 to a file or directory outside it (a virtual environment's interpreter, say) becomes a copy of what
 it points to, if that is a file or a directory (devices, pipes and sockets in it are left out), the
-disk has room for it twice over and 64 MiB besides, and 64 inodes beyond those it takes, and
-nothing in it changed at or after the end bound given as the fourth argument, less a skew (a
-file's change time, which the user cannot set, and its modification time are both read): a copy
-records the source's path, uid, times and inode,
-so the record shows where every file that was not written in place came from. Where the fifth
-argument says the bound came from the net check or is the limit of the work (its start plus the
-time it is given, for a turn that ran to it), a late source is refused; where it says the bound is
-only this sweep's start, the source is copied and flagged. A link the system itself cannot follow
-(to nothing, or through a loop or more links in a row than it allows), a link to a device, a pipe
-or a socket, and a device node, pipe or socket are removed; a copy that fails is removed with
-whatever of it was written. Each change is printed as one JSON line, and an entry that cannot be
-fixed is reported once.
+disk has room for it twice over and 64 MiB besides, and 64 inodes beyond those it takes: a copy
+records the source's path, uid, times and inode, so the record shows where every file that was not
+written in place came from. A source with files changed after the end bound given as the fourth
+argument (a file's change time, which the user cannot set, and its modification time are both
+read) is copied all the same and flagged, with where the bound came from (the fifth argument:
+`limit` for the work's start plus the time it is given, `start` for this sweep's). A link the
+system itself cannot follow (to nothing, or through a loop or more links in a row than it allows),
+a link to a device, a pipe or a socket, and a device node, pipe or socket are removed; a copy that
+fails is removed with whatever of it was written. Each change is printed as one JSON line, and an
+entry that cannot be fixed is reported once.
 """
 import json
 import os
@@ -317,8 +313,7 @@ ROOT = os.path.realpath(sys.argv[1])
 ENTRIES = int(sys.argv[2])
 LIMIT_BYTES = int(sys.argv[3])
 END_BOUND = float(sys.argv[4])
-END_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "netcheck": observed; "limit": the work's limit; else this sweep's start
-SKEW = 0.5   # the cutoff is this much before the end bound, never after it
+END_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "limit": the work's limit; else this sweep's start
 ROOM = 64 << 20   # bytes the disk keeps free beyond a copy and its size again
 SPARE = 64        # inodes the disk keeps free beyond those a copy takes
 spent = copied = 0
@@ -391,16 +386,13 @@ def fix_link(path, name):
         os.unlink(path)
         return {"note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}, True
     sources, size, count = sources_of(resolved, LIMIT_BYTES - spent, ENTRIES - copied)
-    late = [item for item in sources if max(item["source_ctime"], item["source_mtime"]) >= END_BOUND - SKEW]
+    late = [item for item in sources if max(item["source_ctime"], item["source_mtime"]) > END_BOUND]
     record = {"path": name, "target": target, "source": resolved, "source_uid": sources[0]["source_uid"],
               "source_mtime": sources[0]["source_mtime"], "source_ctime": sources[0]["source_ctime"],
               "source_inode": sources[0]["source_inode"], "files": count, "bytes": size, "late_files": len(late),
               "latest_ctime": max(item["source_ctime"] for item in sources), "outside": True}
-    if late and END_FROM in ("netcheck", "limit"):
-        os.unlink(path)
-        return {"refused": dict(record, reason=f"{len(late)} of its files changed after the end bound")}, True
-    if late:  # no end bound was observed, so the reference is this sweep's own start: copy, and flag it
-        record["flagged"] = f"{len(late)} of its files changed after this sweep started; no end bound was observed, so it is copied and flagged"
+    if late:
+        record["flagged"] = f"{len(late)} of its files changed after the end of the work ({END_FROM}); copied and flagged"
     if spent + size > LIMIT_BYTES or copied + count > ENTRIES:
         os.unlink(path)
         return {"refused": dict(record, reason=f"copying it would pass {ENTRIES:,} entries or {LIMIT_BYTES:,} bytes")}, True
@@ -474,15 +466,13 @@ in the tree is longer than 2,048 bytes is moved out with everything below it; a 
 unless, read from where it stands in /app/rebuild, it leads through directories of the tree only
 (outside the tree, by name alone) to a file or a directory of the tree, and then it is rewritten as
 the shortest relative path to that, which resolves the same wherever the tree is unpacked. A file
-changed at or after the end of the work (the end bound, named tenth, less half a second), where
-that end was observed (`netcheck`) or is the work's start plus the time it is given (`limit`), is
-moved out too, and counts for nothing; where the end is only this sweep's start, it counts and the
-record flags it. All of this, the moving out and back included, stops 480 seconds after the sweep's
-start. A tree over the
-limits, one with a file of more than 1,000 hard links in it, one not measured in that time, or one
-the disk has too little room left to pack into /tmp, is refused and stays moved out. Otherwise it
-moves back, and one rename puts its own mark in place of the refused one. The mark's first line is
-`listed` with the number of entries (files,
+changed after the end of the work (the end bound, named tenth) counts like any other, and the record
+flags it. All of this, the moving out and back included, stops 480 seconds after the sweep's start.
+A tree over the limits, one with a file of more than 1,000 hard links in it, one not measured in
+that time, one the disk has too little room left to pack into /tmp, or one some thread of `dev` is
+still alive beside (listed again just before the mark is written: a live thread could change it on
+its way), is refused and stays moved out. Otherwise it moves back, and one rename puts its own mark
+in place of the refused one. The mark's first line is `listed` with the number of entries (files,
 directories and links) and of bytes in its files (each file once, however many names it has), or
 `refused` with the reason on the next line; then up to 200 of the changes made, 32 KiB of them at
 most (the link fixing's first, read as JSON lines from the file named fourth on the command line,
@@ -490,10 +480,10 @@ which is then removed), and how many more there are. A tree that cannot be moved
 whose mark cannot be written, is refused too. The record (.fsmaint.json; for a refused tree, without
 the entries or left out where the disk has too little room) holds the changes (up to 4,000,000 bytes
 of them), this sweep's start and the end of its kill stage, how the freezing and the ending went
-(kill.json in the state directory named fifth), the end bound and where it came from, what the net
-check recorded, the processes found frozen, how many passes of ending it took and how many processes
-were left alive, whether the public hosts answered afterwards, every copy a link became and every
-link refused, with where it came from and when that changed, and every entry: its path, type, size,
+(kill.json in the state directory named fifth), the end bound and where it came from, the
+processes found frozen with their threads, how many passes of ending it took and how many threads
+were left alive, every copy a link became and every link refused, with where it came from and when
+that changed, every entry changed after the end bound, and every entry: its path, type, size,
 modification and change times (as its inode had them before this sweep moved any name of it), and a file's
 sha256 (within a byte limit). Last, the file beside the tree (out/sweep.json in the state directory)
 says where the sweep got to: `done` once /app/rebuild holds its mark, the record and a measured tree
@@ -505,6 +495,7 @@ sweep began).
 import hashlib
 import json
 import os
+import pwd
 import stat
 import subprocess
 import sys
@@ -517,8 +508,9 @@ NOTES, STATE = sys.argv[4], sys.argv[5]
 PASSES = int(sys.argv[6]) if sys.argv[6].isdigit() else None
 LEFT = int(sys.argv[7].strip()) if sys.argv[7].strip().isdigit() else None
 STARTED, ENDED, END_BOUND = (float(value) for value in sys.argv[8:11])
-END_FROM = sys.argv[11] if len(sys.argv) > 11 else "start"   # "netcheck": the bound was observed; else this sweep's start
-SKEW = 0.5   # as in the link fixer
+END_FROM = sys.argv[11] if len(sys.argv) > 11 else "start"   # "limit": the work's limit; else this sweep's start
+PROC = os.environ.get("FSMAINT_PROC", "/proc")   # where the threads of `dev` are listed
+LATE_PATHS = 1000   # paths of entries changed after the end bound kept in the record, at most
 OWN = (".fsmaint", ".fsmaint.json")
 MARK, RECORD = (os.path.join(TOP, name) for name in OWN)
 TREE_PARTS = [part for part in TOP.split("/") if part]   # where a link is read from
@@ -540,7 +532,8 @@ files, kinds = {}, {}   # each file's sha256 by inode; each entry's type by path
 inode_times = {}
 links_of = {}       # the names of each file in the tree, by inode
 NAMES_LIMIT = 1000  # names (hard links) of one file in the tree, at most
-entries = size = hashed = note_bytes = notes_left_out = moved_out = left_out_late = 0
+entries = size = hashed = note_bytes = notes_left_out = moved_out = 0
+late_paths = []
 aside_fd = None
 
 
@@ -778,18 +771,16 @@ def move_out(name, fd, path, why):
         folder = os.path.join(PARENT, f".left.{os.urandom(6).hex()}")
         os.mkdir(folder, 0o700)
         aside_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
-    os.rename(name, str(moved_out + left_out_late), src_dir_fd=fd, dst_dir_fd=aside_fd)
+    os.rename(name, str(moved_out), src_dir_fd=fd, dst_dir_fd=aside_fd)
     note(f"moved out {path if len(path) <= 240 else path[:240] + '...'}: {why}")
 
 
 def walk(top):
-    """Count, and take out what a copy would refuse, below the directory open as `top`; count too
-    the files changed at or after the end bound, less the skew, by the later of their change and
+    """Count, and take out what a copy would refuse, below the directory open as `top`; count too,
+    for the record, the files changed after the end bound, by the later of their change and
     modification times, leaving out what lies in a copy a link became (its times are this sweep's;
-    the copy's source counts instead). Where the end bound was observed or is the work's limit, such
-    a file is moved out with a note and does not count; where it is only this sweep's start, it
-    counts, and the record flags it."""
-    global entries, size, late_files, moved_out, left_out_late
+    the copy's source counts instead). Such a file stays in the tree like any other."""
+    global entries, size, late_files, moved_out
     pending = [("", False)]
     while pending:
         rel, in_copy = pending.pop()
@@ -817,12 +808,10 @@ def walk(top):
                 kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
                 item = {"path": path, "type": kind, "size": info.st_size, "mtime": round(mtime, 3), "ctime": round(ctime, 3)}
                 copied_here = in_copy or path in copied_paths
-                if kind == "file" and not copied_here and max(item["mtime"], item["ctime"]) >= cutoff:
+                if kind == "file" and not copied_here and max(mtime, ctime) > END_BOUND:
                     late_files += 1
-                    if END_FROM in ("netcheck", "limit"):
-                        move_out(name, fd, path, "it changed after the end of the work")
-                        left_out_late += 1
-                        continue
+                    if len(late_paths) < LATE_PATHS:
+                        late_paths.append(path)
                 entries += 1
                 catalogue.append(item)
                 kinds[path] = kind
@@ -904,7 +893,6 @@ try:
         work_started = float(handle.read().split()[0])
 except (OSError, ValueError, IndexError):
     work_started = None
-cutoff = END_BOUND - SKEW
 late_files = 0
 reason = REPLACED or unmoved
 top = None
@@ -921,17 +909,43 @@ finally:
     for descriptor in (top, aside_fd):
         if descriptor is not None:
             os.close(descriptor)
-netcheck, netcheck_open, processes, probe, ending, logs_artifacts = (
-    read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json", "netprobe.json", "kill.json",
-                                 "logs-artifacts.json"))
+processes, ending, logs_artifacts = (read_json(name) for name in ("procs.json", "kill.json", "logs-artifacts.json"))
 
 
-# Entries changed at or after the end bound, less the skew: the files the walk counted (outside the
-# copies), a copied tree by its source's latest change time (the copy's own times are this sweep's),
-# and a refused source by its late files. Links are the fixer's own rewrites and directories change
-# when a child does, so neither counts.
-late_entries = (late_files + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) >= cutoff)
-                + sum(1 for item in refused if item.get("late_files")))
+def live_threads():
+    """How many threads of `dev` are alive (in any state but zombie or dead), as the shell's
+    listing counts them; None where /proc cannot be read."""
+    try:
+        uid = str(pwd.getpwnam("dev").pw_uid)
+        pids = [name for name in os.listdir(PROC) if name.isdigit()]
+    except (KeyError, OSError):
+        return None
+    count = 0
+    for pid in pids:
+        try:
+            threads = os.listdir(f"{PROC}/{pid}/task")
+        except OSError:
+            continue
+        for tid in threads:
+            try:
+                with open(f"{PROC}/{pid}/task/{tid}/status") as handle:
+                    fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+            except (OSError, ValueError):
+                continue
+            if uid in fields.get("Uid", "").split() and (fields.get("State", "").split() or ["?"])[0] not in ("Z", "X"):
+                count += 1
+    return count
+
+
+# Entries changed after the end bound: the files the walk counted (outside the copies) and a copied
+# tree by its source's latest change time (the copy's own times are this sweep's). Links are the
+# fixer's own rewrites and directories change when a child does, so neither counts.
+late_entries = late_files + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) > END_BOUND)
+# The threads of `dev`, listed again just before the tree is listed: one left alive could change it
+# while it is packed, so such a tree is refused.
+threads_left = live_threads() if reason is None else None
+if threads_left:
+    reason = f"{threads_left} threads of the session were still alive after they were ended"
 
 
 def free_room(path):
@@ -969,13 +983,12 @@ def record_of(lines, whole=True):
     """The record as JSON bytes; without the entries and with only the mark's changes where `whole`
     is false."""
     return json.dumps(dict(
-        probe or {"hosts": None, "any_open": None}, sweep_started_at=STARTED, kill_ended_at=ENDED,
-        end_bound=END_BOUND, end_from=END_FROM, netcheck=netcheck, netcheck_open=netcheck_open,
+        sweep_started_at=STARTED, kill_ended_at=ENDED, end_bound=END_BOUND, end_from=END_FROM,
         process_count=(processes or {}).get("process_count"), processes=(processes or {}).get("processes", []),
-        kill_passes=PASSES, processes_left=LEFT, ending=ending, logs_artifacts=logs_artifacts, listed=lines[0],
-        listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
-        copies=copies, refused_copies=refused, late_entries=late_entries,
-        moved_out_long=moved_out, left_out_late=left_out_late, work_started=work_started,
+        kill_passes=PASSES, processes_left=LEFT, threads_left=threads_left, ending=ending,
+        logs_artifacts=logs_artifacts, listed=lines[0], listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
+        copies=copies, refused_copies=refused, late_entries=late_entries, late_paths=late_paths,
+        moved_out_long=moved_out, work_started=work_started,
         notes=notes if whole else notes[:MARK_NOTES], notes_left_out=notes_left_out,
         free_bytes=free, free_inodes=inodes, pack_needs=need, entries=catalogue[:LIMIT_ENTRIES] if whole else [],
         entries_left_out=0 if whole else len(catalogue)), separators=(",", ":")).encode(errors="backslashreplace")
@@ -1047,7 +1060,8 @@ if ready and time.time() <= LAST_BY:
 if time.time() <= LAST_BY:
     try:
         progress({"stage": "done" if clean and (placed_mark or lines[0] == "refused") else "stopped",
-                  "mark": lines[0], "processes_left": LEFT, "ending": ending, "finished_at": time.time()})
+                  "mark": lines[0], "processes_left": LEFT, "threads_left": threads_left, "ending": ending,
+                  "finished_at": time.time()})
     except (OSError, ValueError) as exc:
         print(f"where the sweep got to could not be written ({exc.__class__.__name__})", flush=True)
 for line in lines[1:] + notes[:50]:

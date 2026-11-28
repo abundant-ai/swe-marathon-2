@@ -12,13 +12,16 @@ binary, Node or experiment/.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import io
 import json
 import os
+import pwd
 import re
 import resource
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -26,6 +29,8 @@ import textwrap
 import time
 import tomllib
 from pathlib import Path
+
+import pytest
 
 TASK = Path(__file__).resolve().parent.parent
 STEP = TASK
@@ -35,7 +40,6 @@ RUNNER = TESTS / "verifier" / "runcases.py"
 RECORDER = TESTS / "verifier" / "recorder.py"
 HOOK = TASK / "environment" / "fsmaint-sweep"
 SETUP = TASK / "environment" / "fsmaint-reserve"
-WATCH = TASK / "environment" / "fsmaint-netcheck"
 
 
 def scripts_call(code: str) -> object:
@@ -398,6 +402,7 @@ def run_verifier(
         verify.runcases.HOME = Path({str(tmp_path / "tmp" / "carve-home")!r})
         verify.runcases.TEMP = Path({str(tmp_path / "tmp" / "carve-tmp")!r})
         verify.runcases.CASE_SEC = {case_sec}
+        verify.PREEXEC = verify.runcases.limit  # no seccomp here; the filter has checks of its own
         if {output_limit!r} is not None:
             verify.runcases.OUTPUT_LIMIT = {output_limit!r}
         print(json.dumps(verify.run_cases(Path({str(program)!r}), Path({str(private)!r}), [], None)))
@@ -561,6 +566,175 @@ def test_every_run_gets_the_same_limits(tmp_path):
     ] == wanted
 
 
+X86_64, AARCH64, I386, ARM = 0xC000003E, 0xC00000B7, 0x40000003, 0x40000028
+ALLOW, DENY = 0x7FFF0000, 0x00050000 | 13
+
+
+def filter_verdict(code: bytes, arch: int, nr: int, arg0: int = 0) -> int:
+    """What a classic BPF seccomp program returns for one system call: a small interpreter of the
+    four instructions the filter uses, over seccomp_data (nr, arch, ip, args)."""
+    data = struct.pack("=iIQ6Q", nr, arch, 0, arg0, 0, 0, 0, 0, 0)
+    program = [
+        struct.unpack("=HBBI", code[at : at + 8]) for at in range(0, len(code), 8)
+    ]
+    pc = acc = 0
+    for _ in range(len(program) + 1):
+        opcode, true, false, k = program[pc]
+        if opcode == 0x20:
+            acc, pc = struct.unpack_from("=I", data, k)[0], pc + 1
+        elif opcode == 0x15:
+            pc += 1 + (true if acc == k else false)
+        elif opcode == 0x35:
+            pc += 1 + (true if acc >= k else false)
+        elif opcode == 0x06:
+            return k
+        else:
+            raise AssertionError(f"unexpected opcode {opcode:#x}")
+    raise AssertionError("the program did not return")
+
+
+def test_the_network_filter_denies_every_socket_but_a_local_one():
+    """The seccomp filter every run of the program starts under: socket() and socketpair() fail
+    with EACCES for any family but AF_UNIX (the kernel reads the family's low 32 bits), io_uring
+    cannot be set up, and x32 or 32-bit system calls fail; everything else is allowed. On x86_64
+    and on aarch64."""
+    code = bytes.fromhex(
+        verifier_call(
+            "import json\nfrom verifier import runcases\nprint(json.dumps(runcases.FILTER.hex()))"
+        )
+    )
+    wanted = [
+        (X86_64, 41, 2, DENY),  # socket(AF_INET)
+        (X86_64, 41, 10, DENY),  # AF_INET6
+        (X86_64, 41, 16, DENY),  # AF_NETLINK
+        (X86_64, 41, 17, DENY),  # AF_PACKET
+        (X86_64, 41, (1 << 32) | 2, DENY),
+        (X86_64, 41, 1, ALLOW),  # AF_UNIX
+        (X86_64, 41, (5 << 32) | 1, ALLOW),  # the kernel's int: AF_UNIX
+        (X86_64, 53, 2, DENY),  # socketpair
+        (X86_64, 53, 1, ALLOW),
+        (X86_64, 425, 0, DENY),  # io_uring_setup, _enter, _register
+        (X86_64, 426, 0, DENY),
+        (X86_64, 427, 0, DENY),
+        (X86_64, 0, 0, ALLOW),  # read, write, clone, execve, openat, connect
+        (X86_64, 1, 0, ALLOW),
+        (X86_64, 56, 0, ALLOW),
+        (X86_64, 59, 0, ALLOW),
+        (X86_64, 257, 0, ALLOW),
+        (X86_64, 42, 2, ALLOW),
+        (X86_64, 0x40000000 | 41, 1, DENY),  # the x32 ABI
+        (X86_64, 0x40000000 | 39, 0, DENY),
+        (I386, 102, 1, DENY),  # 32-bit socketcall, getpid
+        (I386, 20, 0, DENY),
+        (AARCH64, 198, 2, DENY),
+        (AARCH64, 198, 1, ALLOW),
+        (AARCH64, 199, 10, DENY),
+        (AARCH64, 425, 0, DENY),
+        (AARCH64, 172, 0, ALLOW),
+        (AARCH64, 41, 2, ALLOW),  # not socket() on aarch64
+        (ARM, 281, 1, DENY),
+    ]
+    got = [
+        (arch, nr, arg0, filter_verdict(code, arch, nr, arg0))
+        for arch, nr, arg0, _ in wanted
+    ]
+    assert got == wanted
+
+
+def test_a_run_that_is_not_denied_the_network_is_an_evaluation_error():
+    """Before any case the verifier starts a process exactly as the program is and needs EACCES
+    from socket(AF_INET) and socket(AF_INET6), a working AF_UNIX socket and a failing
+    io_uring_setup; anything else, or a sandbox that cannot be set up, is an evaluation error. The
+    probe of the verifier's own network is gone: what the machine's network allows decides nothing."""
+    results = verifier_call(
+        textwrap.dedent("""
+        import json, verify
+        answers = {
+            "denied": {"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 13},
+            "open": {"AF_INET": 0, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 13},
+            "another errno": {"AF_INET": 1, "AF_INET6": 1, "AF_UNIX": 0, "io_uring_setup": 13},
+            "io_uring": {"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 0},
+            "no AF_UNIX": {"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 13, "io_uring_setup": 13},
+        }
+        results = {}
+        for name, seen in answers.items():
+            verify.probe = lambda prefix, argv, fallback=None, seen=seen: json.dumps(seen) + "\\n"
+            try:
+                results[name] = verify.network_denied([])
+            except verify.EvaluationError as exc:
+                results[name] = str(exc)
+        verify.probe = lambda prefix, argv, fallback=None: "not json\\n"
+        try:
+            verify.network_denied([])
+        except verify.EvaluationError as exc:
+            results["unreadable"] = str(exc)
+        print(json.dumps(results))
+        """)
+    )
+    assert results.pop("denied") == {
+        "AF_INET": 13,
+        "AF_INET6": 13,
+        "AF_UNIX": 0,
+        "io_uring_setup": 13,
+    }
+    assert results.pop("unreadable") == "The network denial could not be checked"
+    assert all(
+        text.startswith("The network is not denied to the program's runs")
+        for text in results.values()
+    ), results
+    unconfined = verifier_call(
+        textwrap.dedent("""
+        import json, sys, verify
+        def refuse():
+            raise OSError("no seccomp here")
+        verify.PREEXEC = refuse
+        try:
+            verify.network_denied([])
+            print(json.dumps(None))
+        except verify.EvaluationError as exc:
+            print(json.dumps(str(exc)))
+        """)
+    )
+    assert unconfined.startswith("The program's sandbox could not be set up"), (
+        unconfined
+    )
+    verify = (TESTS / "verify.py").read_text()
+    main = verify[verify.index("def main()") :]
+    assert all(
+        gone not in verify
+        for gone in ("network_open", "NETWORK_HOSTS", "create_connection")
+    )
+    assert (
+        main.index("sandbox()")
+        < main.index("network_denied(prefix)")
+        < main.index("seal(REBUILD)")
+    )
+    assert verify.count("preexec=PREEXEC") == 2 and "preexec_fn=PREEXEC" in verify
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="seccomp filters are Linux's; checked in Docker"
+)
+def test_a_confined_process_and_its_children_get_no_network_socket():
+    report = verifier_call(
+        textwrap.dedent("""
+        import json, subprocess, sys
+        from verifier import runcases
+        import verify
+        code = verify.NETWORK_PROBE
+        child = "import subprocess, sys; print(subprocess.run([sys.executable, '-I', '-c', " + repr(code) + "], capture_output=True, text=True).stdout)"
+        direct = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, preexec_fn=runcases.confine)
+        nested = subprocess.run([sys.executable, "-I", "-c", child], capture_output=True, text=True, preexec_fn=runcases.confine)
+        print(json.dumps([json.loads(direct.stdout), json.loads(nested.stdout.strip())]))
+        """)
+    )
+    for seen in report:
+        assert (
+            seen["AF_INET"] == 13 and seen["AF_INET6"] == 13 and seen["AF_UNIX"] == 0
+        ), report
+        assert seen["io_uring_setup"] != 0, report
+
+
 PULLED = TASK / "checks" / "fixtures" / "pulled-d3bd3d08-v2-trial10"
 
 # sandbox() itself, with only what needs root or Linux stood in: the id it draws is this user's,
@@ -594,6 +768,8 @@ def probe_answering(set_id_answer):
     def probe(prefix, argv, fallback=None):
         if argv[-1] == "/proc/self/limits":
             return LIMITS
+        if argv[-1] == verify.NETWORK_PROBE:
+            return json.dumps({"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 13}) + "\\n"
         if argv[-1] in ("-u", "-g"):
             return set_id_answer + "\\n"
         return STATUS
@@ -701,15 +877,17 @@ def test_the_tree_pulled_from_the_v2_oracle_trial_replays_through_the_whole_run(
         verify.LEFTOVER_DIRS[:] = [{str(leftovers)!r}]
         verify.kill_user = lambda uid: None
         verify.remove_ipc = lambda *args, **kw: None
+        verify.PREEXEC = verify.runcases.limit
         notes, refused = verify.manifest(verify.REBUILD)
         record = verify.manifest_record(verify.REBUILD)
         prefix, ids, limits = verify.sandbox()
+        network = verify.network_denied(prefix)
         verify.seal(verify.REBUILD, (os.getuid(), os.getgid()))   # main() seals to root, itself; here to this user
         fetched = verify.fetched_build(verify.REBUILD, verify.upstream_builds())
         cutoff_at = time.monotonic() + 600
         private = Path({str(private)!r})
         metrics = verify.run_cases(verify.PROGRAM, private, [], ids, cutoff_at)
-        metrics["fingerprint"] = verify.fingerprint(verify.PROGRAM, private, [], ids, cutoff_at)
+        metrics["fingerprint"] = verify.fingerprint(verify.PROGRAM, private, [], ids)
         verify.final_cleanup(ids[0], time.monotonic() + 30)
         print(json.dumps([notes, refused, record, list(ids), fetched, metrics]))
     """)
@@ -726,16 +904,13 @@ def test_the_tree_pulled_from_the_v2_oracle_trial_replays_through_the_whole_run(
         and record["entries_listed"] == 2
         and record["listing_complete"] is True
     )
-    assert record["any_open"] is True and record["end_from"] == "start"
+    assert "any_open" not in record and record["end_from"] == "start"
     assert (
         record["process_count"] == 0
         and record["kill_passes"] == 0
         and record["late_entries"] == 0
     ), record
-    assert record["flags"] == [
-        "a public host answered after the end",
-        "no net check observed the end; the end bound is the sweep's start",
-    ], record["flags"]
+    assert record["flags"] == [], record["flags"]
     assert (
         metrics["cases_run"] == 4
         and metrics["setup_errors"] == 0
@@ -848,6 +1023,7 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
         verify.runcases.TEMP = Path({str(tmp_path / "carve-tmp")!r})
         verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
         verify.kill_user = lambda uid: None
+        verify.PREEXEC = verify.runcases.limit
         removed, real_run = [], verify.subprocess.run
         verify.subprocess.run = lambda argv, **kw: removed.append(argv) if argv[0] == "ipcrm" else real_run(argv, **kw)
         root = Path({str(ipc)!r})
@@ -930,6 +1106,7 @@ def test_cleanup_cost_does_not_grow_with_what_a_run_leaves(tmp_path):
         verify.runcases.CASE_SEC = 10
         verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
         verify.kill_user = lambda uid: None
+        verify.PREEXEC = verify.runcases.limit
         verify.MARGIN_SEC = 0.5
         calls, real_run = [], verify.subprocess.run
         verify.subprocess.run = lambda argv, **kw: (calls.append(argv[0]), real_run(argv, **kw))[1]
@@ -994,13 +1171,20 @@ def test_an_oversized_submission_is_not_run(tmp_path):
     """)
     )
     assert "more than 20 entries" in out[0] and "more than 4096 bytes" in out[1]
-    instruction = (STEP / "instruction.md").read_text()
-    assert "under 2 GB and 200,000 files and directories" in instruction
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    assert (
+        "keep it under 2 GB (2,000,000,000 bytes) and 200,000 files, directories and links, with no "
+        "file that has more than 1,000 hard links and no path inside it longer than 2,048 bytes"
+    ) in instruction
     assert "adds at most 1 GB and 100,000 files and directories" in instruction
+    assert "writes at most 1 MB (1,000,000 bytes) to standard output" in instruction
     hook = HOOK.read_text()
     assert "LIMIT_ENTRIES=200000" in hook and "LIMIT_BYTES=2000000000" in hook
+    assert 'PATH_BYTES = int(os.environ.get("FSMAINT_PATH_BYTES", 2048))' in hook
     verify = (TESTS / "verify.py").read_text()
-    assert "MAX_ENTRIES = 200_000" in verify and "MAX_BYTES = 2 << 30" in verify
+    assert "MAX_ENTRIES = 200_000" in verify and "MAX_BYTES = 2_000_000_000" in verify
+    runner = RUNNER.read_text()
+    assert "OUTPUT_LIMIT = 1_000_000" in runner and "CASE_SEC = 2\n" in runner
 
 
 def test_the_sweeps_own_files_do_not_count_against_the_trees_limits(tmp_path):
@@ -1164,12 +1348,16 @@ def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path
         '(output / ".reward.tmp").write_text("--------")',
         "manifest(REBUILD)",
         "sandbox()",
+        "network_denied(prefix)",
         "seal(REBUILD)",
+        "fetched_build(REBUILD",
+        "probes = fingerprint(PROGRAM",
+        "refused = fingerprint_refusal(probes)",
         "metrics = run_cases(PROGRAM",
         "final_cleanup(ids[0], min(cutoff_at",
         'write_in_place(output / ".reward.tmp"',
         'os.replace(output / ".reward.tmp", output / "reward.txt")',
-        'write_in_place(output / "metrics.json"',
+        'output / "metrics.json",',
     ]
     assert [main.index(step) for step in order] == sorted(
         main.index(step) for step in order
@@ -1186,7 +1374,6 @@ def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path
 
 HOOK_ROLES = {
     "List the processes": "processes",
-    "Record whether": "egress",
     "Put a mark": "mark",
     "Make /app/rebuild safe": "fixing",
     "Measure /app/rebuild": "measuring",
@@ -1219,13 +1406,14 @@ def run_hook(
     started: float | None = None,
     measure: bool = True,
     preexec=None,
+    user: str | None = None,
 ) -> list[str]:
-    """The sweep hook's Python blocks on `top`, in the hook's order: the process listing and the
-    egress probe (into a state dir), the refused mark, the link fixing (as the agent's user) and the
-    measuring (as root, handed the notes and the state; `env`, `preexec` and `started`, the sweep's
-    start, apply to it alone; `measure` false stops before it). `turn_end` defaults far in the
-    future, so an honest source read now is never taken for one written after the turn; the mark's
-    lines."""
+    """The sweep hook's Python blocks on `top`, in the hook's order: the process listing (into a
+    state dir), the refused mark, the link fixing (as the agent's user) and the measuring (as root,
+    handed the notes and the state; `env`, `preexec` and `started`, the sweep's start, apply to it
+    alone; `measure` false stops before it; `user`, where given, stands for `dev` in the measuring's
+    last listing of threads). `turn_end` defaults far in the future, so nothing read now is
+    flagged as changed after the turn; the mark's lines."""
     programs = hook_programs()
     state = top.parent / f".{top.name}-state"
     state.mkdir(exist_ok=True)
@@ -1234,21 +1422,6 @@ def run_hook(
             [sys.executable, "-I", "-", str(state / "procs.json")],
             check=False,
             input=programs["processes"],
-            text=True,
-            capture_output=True,
-            timeout=60,
-        ).returncode
-        == 0
-    )
-    egress = programs["egress"].replace(
-        '("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
-        '("127.0.0.1", 9),',
-    )
-    assert (
-        subprocess.run(
-            [sys.executable, "-I", "-", str(state / "netprobe.json")],
-            check=False,
-            input=egress,
             text=True,
             capture_output=True,
             timeout=60,
@@ -1312,7 +1485,9 @@ def run_hook(
             turn_from,
         ],
         check=False,
-        input=programs["measuring"],
+        input=programs["measuring"].replace(
+            'getpwnam("dev")', f'getpwnam("{user or "dev"}")'
+        ),
         text=True,
         capture_output=True,
         timeout=300,
@@ -1397,11 +1572,10 @@ def test_the_collect_hook_lets_honest_deliveries_through_the_copy(tmp_path):
         and record["listing_complete"] is True
         and record["kill_passes"] == 1
     )
-    assert (
-        record["hosts"] == {"127.0.0.1:9": record["hosts"]["127.0.0.1:9"]}
-        and record["any_open"] is False
+    assert not {"hosts", "any_open", "netcheck", "netcheck_open"} & set(record), (
+        "the sweep probes no network"
     )
-    assert record["late_entries"] == 0, (
+    assert record["late_entries"] == 0 and record["late_paths"] == [], (
         "nothing was written after the (far-future) turn end"
     )
     listed = {item["path"]: item for item in record["entries"]}
@@ -1485,8 +1659,8 @@ def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path)
             f'[[agent.{phase}]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-reserve'
             in toml
         ), phase
-    assert 'command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"' in toml, (
-        "setup-complete starts the watcher"
+    assert 'command = "/usr/local/lib/fsmaint/fsmaint-reserve --begin"' in toml, (
+        "setup-complete records when the work began"
     )
 
 
@@ -1826,9 +2000,9 @@ def hook_shell(name: str) -> str:
     hook = HOOK.read_text()
     patterns = {
         "progress": r"progress\(\) \{[^\n]*\n.*?\n\}\n",
-        "processes": r"alive\(\) \{[^\n]*\n.*?\nas_dev\(\) \{[^\n]*\n.*?\n\}\n",
-        "freeze": r"froze=0\n.*?\ndone\n",
-        "kill": r"passes=0\n.*?> \"\$STATE/kill\.json\"\n",
+        "processes": r"TASKS=\$\(cat <<'TASKS'\n.*?\nas_dev\(\) \{[^\n]*\n.*?\n\}\n",
+        "freeze": r"as_dev kill -STOP -1\nfroze=1\n.*?\ndone\n",
+        "kill": r"as_dev kill -9 -1\n.*?> \"\$STATE/kill\.json\"\n",
     }
     found = re.search(patterns[name], hook, re.DOTALL)
     if found:
@@ -1843,19 +2017,29 @@ def hook_shell(name: str) -> str:
     return found.group(0) if found else ""
 
 
-def stand_in_commands(folder: Path, pgrep: str) -> dict[str, str]:
-    """A PATH whose pgrep is `pgrep` (a shell body) and whose pkill, setpriv and kill do nothing:
-    the phases run here signal no process at all."""
+def stand_in_commands(folder: Path) -> dict[str, str]:
+    """A PATH whose pkill, setpriv and kill do nothing: the phases run here signal no process."""
     folder.mkdir(parents=True, exist_ok=True)
-    for name, body in (
-        ("pgrep", pgrep),
-        ("pkill", "exit 0\n"),
-        ("setpriv", "exit 0\n"),
-        ("kill", "exit 0\n"),
-    ):
-        (folder / name).write_text("#!/bin/sh\n" + body)
+    for name in ("pkill", "setpriv", "kill"):
+        (folder / name).write_text("#!/bin/sh\nexit 0\n")
         (folder / name).chmod(0o755)
     return dict(os.environ, PATH=f"{folder}:{os.environ['PATH']}")
+
+
+def stand_in_proc(top: Path, processes: dict[int, list[tuple[int, str, int]]]) -> Path:
+    """A /proc holding `processes`: for each pid, its threads as (tid, state, uid), the main thread
+    being the one whose tid is the pid; only what the sweep reads (the status of each process and
+    of each of its tasks, and its command line)."""
+    for pid, threads in processes.items():
+        for tid, state, uid in threads:
+            folder = top / str(pid) / "task" / str(tid)
+            folder.mkdir(parents=True, exist_ok=True)
+            status = f"Name:\tstand-in\nState:\t{state} (x)\nPPid:\t1\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n"
+            (folder / "status").write_text(status)
+            if tid == pid:
+                (top / str(pid) / "status").write_text(status)
+        (top / str(pid) / "cmdline").write_bytes(b"stand-in\0")
+    return top
 
 
 def test_the_sweep_says_it_began_first_and_marks_the_tree_before_ending_processes(
@@ -1914,22 +2098,26 @@ def test_the_sweep_says_it_began_first_and_marks_the_tree_before_ending_processe
     assert (out / "sweep.json").stat().st_ino == inode, "written in place"
 
 
-def test_the_kill_phase_counts_only_live_processes_and_ends_in_time(tmp_path):
-    """QA 23 N1: zombies (which `pgrep` without `-r` matches) kept round 9's loops running all their
-    passes, three /proc scans each, and counted as processes left. Now both phases test and count
-    only processes that are alive (running, sleeping, waiting, stopped or traced), each listing and
-    signal has PROBE seconds, each phase a set time, and kill.json records whether it ran out. Here
-    with stand-in commands that signal nothing: a population of zombies only, then a /proc too slow
-    to answer at all."""
+def test_the_kill_phase_counts_live_threads_and_ends_in_time(tmp_path):
+    """Both phases make one pass whatever a listing says, then repeat while a thread of `dev` is
+    still running (the freeze) or alive (the ending): threads are read from /proc/<pid>/task, so a
+    process whose main thread has exited (a zombie leader) while another thread runs counts as
+    alive, and a zombie with no live thread does not. Each listing and signal has PROBE seconds,
+    each phase a set time, and kill.json records the passes, whether a phase ran out and how many
+    threads were left. Here with stand-in commands that signal nothing and a stand-in /proc (the
+    sweep's user is this one): zombies only, other users' threads, a zombie leader with a live
+    thread, and a /proc that cannot be read."""
+    uid = os.getuid()
+    me = pwd.getpwuid(uid).pw_name
 
     def phases(
-        name: str, pgrep: str, probe: int
+        name: str, proc: Path
     ) -> tuple[subprocess.CompletedProcess, float, Path]:
         state = tmp_path / name
         state.mkdir()
         script = (
-            f'STATE="{state}"\nPROBE={probe}\nFREEZE=2\nENDING=3\n'
-            + hook_shell("processes")
+            f'STATE="{state}"\nPROBE=5\nFREEZE=2\nENDING=3\nPROC="{proc}"\n'
+            + hook_shell("processes").replace('getpwnam("dev")', f'getpwnam("{me}")')
             + hook_shell("freeze")
             + hook_shell("kill")
             + 'echo "passes=$passes left=$left"\n'
@@ -1942,7 +2130,7 @@ def test_the_kill_phase_counts_only_live_processes_and_ends_in_time(tmp_path):
                 capture_output=True,
                 text=True,
                 timeout=60,
-                env=stand_in_commands(tmp_path / f"{name}-bin", pgrep),
+                env=stand_in_commands(tmp_path / f"{name}-bin"),
             )
         except subprocess.TimeoutExpired:
             done = subprocess.CompletedProcess(
@@ -1950,38 +2138,89 @@ def test_the_kill_phase_counts_only_live_processes_and_ends_in_time(tmp_path):
             )
         return done, time.monotonic() - began, state
 
-    zombies = 'case " $* " in *" -r "*) exit 1;; esac\necho 4242\n'
-    done, elapsed, state = phases(
-        "zombies", zombies, 5
-    )  # an instant stand-in: room for a loaded machine
-    assert done.stdout.split() == ["passes=0", "left=0"] and elapsed < 5, (
-        done.stdout,
-        done.stderr,
-        elapsed,
+    other = uid + 1
+    quiet = {
+        "zombies": {
+            4242: [(4242, "Z", uid)],
+            4250: [(4250, "Z", uid), (4251, "X", uid)],
+        },
+        "others": {77: [(77, "R", other), (78, "S", other)], 4242: [(4242, "Z", uid)]},
+    }
+    for name, processes in quiet.items():
+        done, elapsed, state = phases(
+            name, stand_in_proc(tmp_path / f"{name}-proc", processes)
+        )
+        assert done.stdout.split() == ["passes=1", "left=0"] and elapsed < 5, (
+            name,
+            done.stdout,
+            done.stderr,
+            elapsed,
+        )
+        assert json.loads((state / "kill.json").read_text()) == {
+            "freeze_passes": 1,
+            "freeze_ran_out": False,
+            "kill_passes": 1,
+            "kill_ran_out": False,
+            "processes_left": "0",
+        }, name
+    leader = stand_in_proc(
+        tmp_path / "leader-proc", {4242: [(4242, "Z", uid), (4243, "S", uid)]}
     )
+    done, elapsed, state = phases("leader", leader)
     ending = json.loads((state / "kill.json").read_text())
-    assert ending == {
-        "freeze_passes": 0,
-        "freeze_ran_out": False,
-        "kill_passes": 0,
-        "kill_ran_out": False,
-        "processes_left": "0",
-    }, ending
-    if shutil.which("timeout") is None:
-        return
-    done, elapsed, state = phases("silent", "exec sleep 30\n", 1)
-    ending = (
-        json.loads((state / "kill.json").read_text())
-        if (state / "kill.json").exists()
-        else None
-    )
     assert (
-        elapsed < 30
-        and ending
-        and ending["freeze_ran_out"] is True
+        ending["freeze_ran_out"] is True
         and ending["kill_ran_out"] is True
-    ), (done, elapsed)
-    assert ending["processes_left"] == "unknown", ending
+        and ending["freeze_passes"] > 1
+        and ending["kill_passes"] > 1
+        and ending["processes_left"] == "1"
+    ), (ending, done.stderr)
+    assert elapsed < 30, elapsed
+    unreadable = tmp_path / "not-a-proc"
+    unreadable.write_text("")
+    done, elapsed, state = phases("unreadable", unreadable)
+    ending = json.loads((state / "kill.json").read_text())
+    assert (
+        ending["freeze_ran_out"] is True
+        and ending["kill_ran_out"] is True
+        and ending["processes_left"] == "unknown"
+    ), (ending, done.stderr)
+    assert elapsed < 30, elapsed
+    hook = HOOK.read_text()
+    assert "pgrep" not in hook, "no listing by the main thread's state"
+    assert hook.index("as_dev kill -STOP -1\nfroze=1") < hook.index(
+        "while alive T,t,Z,X"
+    )
+    assert hook.index("as_dev kill -9 -1\n") < hook.index("while alive Z,X")
+
+
+def test_a_thread_left_alive_when_the_tree_is_listed_refuses_it(tmp_path):
+    """Just before it writes the listing, the measuring lists the threads of `dev` again: one left
+    alive (a process whose main thread had exited, with another thread running) could change the
+    tree while it is packed, so the tree is refused; zombies alone are no reason to refuse."""
+    me = pwd.getpwuid(os.getuid()).pw_name
+    results = {}
+    for name, threads in (
+        ("zombies", [(4242, "Z", os.getuid())]),
+        ("live thread", [(4242, "Z", os.getuid()), (4243, "S", os.getuid())]),
+    ):
+        proc = stand_in_proc(tmp_path / f"{name}-proc", {4242: threads})
+        top = tmp_path / name / "rebuild"
+        top.mkdir(parents=True)
+        (top / "carve").write_text("#!/bin/sh\nexit 0\n")
+        lines = run_hook(top, env={"FSMAINT_PROC": str(proc)}, user=me)
+        results[name] = (lines, json.loads((top / ".fsmaint.json").read_text()))
+    lines, record = results["zombies"]
+    assert lines[0].startswith("listed 1 ") and record["threads_left"] == 0, lines
+    lines, record = results["live thread"]
+    assert (
+        lines[:2]
+        == [
+            "refused",
+            "1 threads of the session were still alive after they were ended: it was not copied",
+        ]
+        and record["threads_left"] == 1
+    ), lines
 
 
 def platform_copy_partial(top: Path, dest: Path) -> str | None:
@@ -2500,14 +2739,19 @@ def test_the_verifier_records_in_a_builder_stage_and_keeps_only_the_answers():
     assert re.findall(r"^COPY .*$", agent, re.MULTILINE) == [
         "COPY spec/ /app/spec/",
         "COPY docs/ /app/docs/",
-        "COPY fsmaint-reserve fsmaint-netcheck fsmaint-sweep /usr/local/lib/fsmaint/",
+        "COPY fsmaint-reserve fsmaint-sweep /usr/local/lib/fsmaint/",
     ]
     assert "APT_SNAPSHOT" in agent, "the agent image can be pinned to a snapshot too"
     assert "carve" not in agent.replace("/app/rebuild", "").lower(), (
         "no build of any Carve engine in the agent's image"
     )
     assert (
-        'install.py" "$here/carve.tar.gz" "$here/build.txt" /app/rebuild/carve' in solve
+        'cp -R "$here/carve/carvelib" /app/rebuild/carvelib' in solve
+        and 'install -m 0755 "$here/carve/carve" /app/rebuild/carve' in solve
+        and "install.py" not in solve
+        and "carve.tar.gz" not in solve
+    ), (
+        "the reference installs the renderer written from the specification, not the original"
     )
     for tool in ("python3", "golang-go", "rustc", "cargo"):
         assert tool in agent and tool in final, tool
@@ -2555,36 +2799,72 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
         install(bad, tmp_path / "no" / "carve").returncode != 0
         and not (tmp_path / "no" / "carve").exists()
     )
-    blank = tmp_path / "blank.json"
-    blank.write_text(json.dumps({"strings": ["ELF"]}))
-    done = subprocess.run(
-        [
-            sys.executable,
-            "-I",
-            str(TASK / "common" / "original" / "install.py"),
-            str(archive),
-            str(good),
-            str(tmp_path / "blanked" / "carve"),
-            "--blank",
-            str(blank),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        done.returncode == 0
-        and (tmp_path / "blanked" / "carve").read_bytes() == b"\x7fxxx carve"
-    ), "blanked in place, same length"
-    solve = (STEP / "solution" / "solve.sh").read_text()
-    verifier = (TESTS / "Dockerfile").read_text()
-    assert (
-        '/app/rebuild/carve --blank "$here/blank.json"' in solve
-        and "--blank" not in verifier
-    ), "only the solution blanks"
+    assert "--blank" not in (TASK / "common" / "original" / "install.py").read_text()
     package = (SCRIPTS / "package_step.py").read_text()
-    assert 'content["solution/blank.json"]' in package and '["strings"]' in package
+    assert (
+        'content["tests/original/carve.tar.gz"] = original()' in package
+        and "solution/blank.json" not in package
+        and "solution/LICENSE" not in package
+        and 'for place in ("tests/original", "solution")' not in package
+    ), "the original goes into the verifier's build context only"
+
+
+SOLUTION = STEP / "solution" / "carve"
+
+
+def test_the_reference_is_a_readable_renderer_on_the_standard_library():
+    """The reference solution is the renderer itself, in source: a launcher and a package of
+    modules, Python 3.12 and its standard library only, no binary, nothing of carve-rs. It holds no
+    case or probe ids and, where the private cases are present here, none of their text."""
+    files = sorted(
+        path
+        for path in SOLUTION.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts
+    )
+    names = [str(path.relative_to(SOLUTION)) for path in files]
+    assert "carve" in names and all(
+        name == "carve" or (name.startswith("carvelib/") and name.endswith(".py"))
+        for name in names
+    ), names
+    assert not [
+        path
+        for path in (STEP / "solution").iterdir()
+        if path.name not in ("carve", "solve.sh")
+    ]
+    launcher = (SOLUTION / "carve").read_text()
+    assert launcher.startswith("#!/usr/bin/python3 -I\n"), launcher[:40]
+    stdlib = set(sys.stdlib_module_names)
+    sources = {}
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        sources[str(path.relative_to(SOLUTION))] = text
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                modules = [] if node.level else [node.module or ""]
+            else:
+                continue
+            for module in modules:
+                top = module.split(".")[0]
+                assert top in stdlib or top == "carvelib", (path.name, module)
+    every = "\n".join(sources.values())
+    for word in ("carve-rs", "subprocess", "socket", "urllib", "ctypes"):
+        assert word not in every, word
+    assert not re.search(r"\b[PF]\d{3,5}\b", every), "no case or probe ids"
+    private = TESTS / "private" / "cases.json"
+    if private.is_file():
+        cases = json.loads(private.read_text(encoding="utf-8"))["cases"]
+        lines = {
+            line.strip()
+            for case in cases
+            for text in list(case["files"].values()) + [case.get("stdin") or ""]
+            for line in text.splitlines()
+            if len(line.strip()) >= 40
+        }
+        found = [line for line in lines if line in every]
+        assert not found, found[:3]
 
 
 def test_hosts_draw_once_and_the_attacker_splice_is_rejected():
@@ -2650,14 +2930,13 @@ def test_hosts_draw_once_and_the_attacker_splice_is_rejected():
     )
 
 
-def test_a_source_changed_after_the_turn_is_refused_only_when_the_turn_end_was_seen(
+def test_a_source_changed_after_the_end_is_copied_and_flagged_whatever_the_end(
     tmp_path,
 ):
-    """QA 07b F-b/F-c, 07c F1: the link fixer's cutoff is the turn's end bound less a 0.5 s skew in
-    the honest direction only. A source changed after the turn is refused when the watcher saw
-    the turn end, copied and flagged when the reference is only the hook's own start, and an honest
-    source finished before the turn's end is copied unflagged; late entries count a copy by its
-    source's change time."""
+    """The link fixer never refuses a source for when it changed: a source changed after the end of
+    the work is copied and flagged, whether the end is the work's limit or only the sweep's start,
+    and an honest source finished before the end is copied unflagged; late entries count a copy by
+    its source's change time."""
 
     def delivery(name: str) -> Path:
         outside = tmp_path / f"{name}-outside"
@@ -2669,42 +2948,36 @@ def test_a_source_changed_after_the_turn_is_refused_only_when_the_turn_end_was_s
         (top / "helpers").symlink_to(outside)
         return top
 
-    past = time.time() - 10  # the turn ended before the outside tree was written
-    seen = delivery("seen")
-    run_hook(seen, turn_end=past, turn_from="netcheck")
-    record = json.loads((seen / ".fsmaint.json").read_text())
-    assert (
-        not (seen / "helpers").exists()
-        and len(record["refused_copies"]) == 1
-        and record["copies"] == []
-    )
-    assert "changed after the end bound" in record["refused_copies"][0]["reason"]
-    unseen = delivery("unseen")
-    run_hook(unseen, turn_end=past, turn_from="start")
-    record = json.loads((unseen / ".fsmaint.json").read_text())
-    assert (
-        (unseen / "helpers" / "tool.py").is_file()
-        and len(record["copies"]) == 1
-        and record["refused_copies"] == []
-    )
-    assert (
-        "no end bound was observed" in record["copies"][0]["flagged"]
-        and record["late_entries"] >= 1
-    )
+    past = time.time() - 10  # the work ended before the outside tree was written
+    for origin in ("limit", "start"):
+        late = delivery(f"late-{origin}")
+        run_hook(late, turn_end=past, turn_from=origin)
+        record = json.loads((late / ".fsmaint.json").read_text())
+        assert (
+            (late / "helpers" / "tool.py").is_file()
+            and len(record["copies"]) == 1
+            and record["refused_copies"] == []
+        ), (origin, record["copies"], record["refused_copies"])
+        assert (
+            f"changed after the end of the work ({origin})"
+            in record["copies"][0]["flagged"]
+            and record["late_entries"] >= 1
+        ), record["copies"]
     flags = verifier_call(
         textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
-        print(json.dumps(verify.manifest_record(Path({str(unseen)!r}))["flags"]))
+        print(json.dumps(verify.manifest_record(Path({str(late)!r}))["flags"]))
     """)
     )
-    assert any("copied because no end bound was observed" in flag for flag in flags), (
-        flags
-    )
+    assert any(
+        "copies hold files changed after the end of the work; kept" in flag
+        for flag in flags
+    ), flags
     honest = delivery("honest")
     run_hook(
-        honest, turn_end=time.time() + 10**6, turn_from="netcheck"
-    )  # written well before the turn's end
+        honest, turn_end=time.time() + 10**6, turn_from="limit"
+    )  # written well before the end
     record = json.loads((honest / ".fsmaint.json").read_text())
     assert (
         len(record["copies"]) == 1
@@ -2712,94 +2985,67 @@ def test_a_source_changed_after_the_turn_is_refused_only_when_the_turn_end_was_s
         and record["late_entries"] == 0
     )
     hook = HOOK.read_text()
-    assert hook.count("END_BOUND - SKEW") == 2 and "END_BOUND + SKEW" not in hook, (
-        "the cutoff is the turn's end bound less the skew: in the honest direction only, never after the bound (QA 07c)"
+    assert (
+        "SKEW" not in hook
+        and '"refused": dict(record, reason=f"{len(late)}' not in hook
     )
 
 
-def test_a_fetch_that_beats_the_kill_is_refused_and_counted(tmp_path):
-    """QA 07c F1: the turn's end is the watcher's first observation of egress open less a poll —
-    never the kill, which a fetch can beat. A source written at or after that bound (less the skew)
-    is refused and counted in `late_entries`; so is a file written in place then; the hook's reader
-    takes the bound from the watcher's record and falls back to the hook's own start."""
-    bound = time.time() - 1.0  # the turn ended; egress seen open after it
-    fetched = tmp_path / "fetched"
-    fetched.mkdir()
-    (fetched / "carve-real").write_bytes(
-        b"\x7fELF fetched after the turn, before the kill"
-    )
+def test_a_file_written_in_the_last_second_is_kept(tmp_path):
+    """A file the work wrote just before its end stays in the tree unflagged, and one written after
+    the end (a process still running when the turn reached its limit) stays too, flagged in the
+    record: nothing is moved out for when it was written. The bound's reader takes the work's
+    start plus its limit when the sweep began after that, and else the sweep's own start."""
     top = tmp_path / "rebuild"
     top.mkdir()
-    (top / "carve").write_text(
-        "#!/bin/sh\nexit 0\n"
-    )  # written now, in place: after the bound
-    (top / "blob").symlink_to(fetched / "carve-real")
-    run_hook(top, turn_end=bound, turn_from="netcheck")
+    (top / "carve").write_text("#!/bin/sh\nexit 0\n")
+    written = max((top / "carve").stat().st_mtime, (top / "carve").stat().st_ctime)
+    lines = run_hook(top, turn_end=written + 0.3, turn_from="limit")
     record = json.loads((top / ".fsmaint.json").read_text())
-    assert (
-        not (top / "blob").exists()
-        and len(record["refused_copies"]) == 1
-        and record["copies"] == []
-    )
-    assert (
-        record["refused_copies"][0]["late_files"] == 1
-        and "changed after the end bound" in record["refused_copies"][0]["reason"]
-    )
-    assert record["late_entries"] >= 2, record[
-        "late_entries"
-    ]  # the refused source and the file written in place
+    assert lines[0].startswith("listed 1 ") and (top / "carve").is_file(), lines
+    assert record["late_entries"] == 0 and record["late_paths"] == [], record
+    after = tmp_path / "after" / "rebuild"
+    after.mkdir(parents=True)
+    (after / "carve").write_text("#!/bin/sh\nexit 0\n")
+    (after / "lib.py").write_text("x = 1\n")
+    written = min((after / name).stat().st_ctime for name in ("carve", "lib.py"))
+    lines = run_hook(after, turn_end=written - 0.3, turn_from="limit")
+    record = json.loads((after / ".fsmaint.json").read_text())
+    assert lines[0].startswith("listed 2 ") and (after / "lib.py").is_file(), lines
+    assert record["late_entries"] == 2 and sorted(record["late_paths"]) == [
+        "carve",
+        "lib.py",
+    ], record
     flags = verifier_call(
         textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
-        print(json.dumps(verify.manifest_record(Path({str(top)!r}))["flags"]))
+        print(json.dumps(verify.manifest_record(Path({str(after)!r}))["flags"]))
     """)
     )
-    assert any("were refused" in flag for flag in flags) and any(
-        "changed after the end bound" in flag for flag in flags
+    assert (
+        "2 entries changed after the end of the work (limit); kept: review them"
+        in flags
     ), flags
     reader = hook_programs()["bound"]
     state = tmp_path / "state"
     state.mkdir()
-    (state / "netcheck-open.json").write_text(
-        json.dumps(
-            {
-                "first_open_at": 1000.0,
-                "poll_seconds": 0.35,
-                "last_closed_at": 999.7,
-                "opened_at": 1000.9,
-            }
-        )
-    )
-    seen = subprocess.run(
-        [sys.executable, "-I", "-", str(state / "netcheck-open.json"), "500.0"],
-        check=False,
-        input=reader,
-        text=True,
-        capture_output=True,
-        timeout=30,
-    )
-    unseen = subprocess.run(
-        [sys.executable, "-I", "-", str(state / "missing"), "500.0"],
-        check=False,
-        input=reader,
-        text=True,
-        capture_output=True,
-        timeout=30,
-    )
-    assert seen.stdout.split() == ["999.65", "netcheck"] and unseen.stdout.split() == [
-        "500.0",
-        "start",
-    ], (seen.stdout, unseen.stdout)
-    watch = WATCH.read_text()
-    body = watch[watch.index("def main") :]
-    assert body.index('write("netcheck-open.json", record)') < body.index(
-        "end_processes()"
-    ), "the reference is written before any kill"
-    assert all(
-        key in watch
-        for key in ("first_open_at", "last_closed_at", "end_bound", "poll_seconds")
-    )
+    (state / "work-started").write_text("1000.5\n")
+
+    def bound(started: str, limit: str) -> list[str]:
+        return subprocess.run(
+            [sys.executable, "-I", "-", started, str(state / "work-started"), limit],
+            check=False,
+            input=reader,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        ).stdout.split()
+
+    assert bound("50000.0", "43200") == ["44200.5", "limit"]
+    assert bound("2000.0", "43200") == ["2000.0", "start"]
+    (state / "work-started").unlink()
+    assert bound("50000.0", "43200") == ["50000.0", "start"]
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
@@ -2811,7 +3057,7 @@ def test_the_agent_cannot_replace_the_artifact_directory():
     )
     assert "useradd --uid 10001 --create-home dev" in docker
     assert "chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/*" in docker
-    assert "/usr/local/sbin" not in docker, (
+    assert not re.search(r"COPY [^\n]*/usr/local/s?bin", docker), (
         "the hooks live in a root-only directory, not on PATH"
     )
     toml = (TASK / "task.toml").read_text()
@@ -2820,7 +3066,41 @@ def test_the_agent_cannot_replace_the_artifact_directory():
         and 'artifacts = ["/app/rebuild", "/var/lib/fsmaint/out"]' in toml
     )
     assert 'environment_mode = "separate"' in toml
-    assert toml.count('network_mode = "no-network"') == 3
+    assert toml.count('network_mode = "no-network"') == 4, (
+        "no phase has the network: the agent, its environment, the verifier and its environment"
+    )
+    assert 'network_mode = "public"' not in toml and "open_internet" not in toml
+
+
+def test_both_images_keep_roots_path_unwritable_and_make_every_artifacts_parent():
+    """Root runs tar, su and the hooks' tools through the image's PATH after the work and while it
+    grades: in both images an explicit PATH with nothing on it, in it or above it writable by anyone
+    but root, checked when the image is built (the last stage, after every install). The verifier
+    image makes the parent of every declared artifact."""
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    for dockerfile in (TASK / "environment" / "Dockerfile", TESTS / "Dockerfile"):
+        text = dockerfile.read_text()
+        last = text[text.rindex("\nFROM ") :] if text.count("\nFROM ") else text
+        assert (
+            "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            in last
+        ), dockerfile
+        assert "-perm /022 -o ! -user root" in last and "readlink -f" in last, (
+            dockerfile
+        )
+        gate = last.index("ENV PATH=")
+        assert all(
+            last.rindex(step) < gate
+            for step in ("apt-get install", "COPY ")
+            if step in last
+        ), "the check comes after everything the last stage installs or copies"
+    verifier = (TESTS / "Dockerfile").read_text()
+    made = re.search(r"RUN mkdir -p ([^\\\n]+)", verifier[verifier.rindex("\nFROM ") :])
+    assert made, "the verifier image makes its directories"
+    for artifact in config["artifacts"]:
+        parent = str(Path(artifact).parent)
+        assert parent in made.group(1).split(), (artifact, made.group(1))
+    assert "/logs/verifier" in made.group(1).split()
 
 
 def test_every_run_fits_inside_the_step_verifier_time():
@@ -2847,15 +3127,18 @@ def test_every_run_fits_inside_the_step_verifier_time():
         f"Each run finishes within {per_run} seconds"
         in (STEP / "instruction.md").read_text()
     )
-    assert (
-        int(
-            re.search(
-                r"\[agent\]\n(?:#[^\n]*\n)*timeout_sec = (\d+)",
-                (TASK / "task.toml").read_text(),
-            ).group(1)
-        )
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    declared = (
+        config["environment"]["build_timeout_sec"]
+        + sum(hook["timeout_sec"] for hook in config["agent"]["setup_begin"])
+        + sum(hook["timeout_sec"] for hook in config["agent"]["setup_complete"])
+        + config["agent"]["timeout_sec"]
+        + sum(hook["timeout_sec"] for hook in config["verifier"]["collect"])
         + step_verifier
-        <= 41000
+    )
+    assert declared + 3600 <= 24 * 3600, (
+        "one attempt (build, set-up, the work, the collect hook, the verifier, an hour besides) "
+        "fits the platform's 24-hour attempt"
     )
 
 
@@ -2877,7 +3160,6 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
             "test case",
             "working session",
             "fresh context",
-            "hours",
             "candidate",
         ):
             assert word not in lowered, (name, word)
@@ -2917,6 +3199,10 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
     assert not re.search(r"\bcaps?\b", said), "task.toml comment names a cap"
     assert comments == [], comments  # task.toml carries no comment (round 12)
     instruction = seen["instruction.md"]
+    hours = re.findall(r"[^.]*\bhours?\b[^.]*\.", " ".join(instruction.split()))
+    agent_limit = tomllib.loads(seen["task.toml"])["agent"]["timeout_sec"]
+    assert hours == [" You have up to 12 hours to build and test the renderer."], hours
+    assert agent_limit == 12 * 3600, "the stated time is the agent's limit"
     assert "/app/rebuild/carve" in instruction and "Out of scope:" in instruction
     for excluded in (
         "{{ path }}",
@@ -2931,7 +3217,7 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
         "`--version`",
     ):
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
-    for carrier in (HOOK, SETUP, WATCH):
+    for carrier in (HOOK, SETUP):
         lowered = carrier.read_text().lower()
         for word in (
             "grade",
@@ -2956,6 +3242,49 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
             "agent",
         ):
             assert word not in lowered, (carrier.name, word)
+
+
+def test_the_brief_states_only_what_the_verifier_enforces():
+    """The brief's one prohibition is the one the verifier refuses: carve-rs, the other Carve
+    engines with the runtimes they run on (the four language families of upstream_builds.json's
+    runtime markers), and upstream's code. The toolchains are stated as what is installed, gcc
+    among them; no duty to keep the code modular or to use only certain toolchains is stated."""
+    brief = " ".join((STEP / "instruction.md").read_text().split())
+    assert (
+        "the other Carve engines (with the JavaScript, PHP, Ruby and WebAssembly runtimes they run on)"
+        in brief
+        and "they may not be brought in" in brief
+    )
+    assert (
+        "Python 3.12, Go, Rust (`rustc` and `cargo`) and gcc are installed, here and where your "
+        "renderer will run, each with its standard library and nothing more"
+    ) in brief
+    for gone in (
+        "modular",
+        "separate parts",
+        "approved toolchains",
+        "code our own team wrote",
+        "no third-party",
+        "standard library only",
+        "since we maintain",
+    ):
+        assert gone not in brief, gone
+    runtimes = json.loads((TESTS / "verifier" / "upstream_builds.json").read_text())[
+        "runtimes"
+    ]
+    families = {
+        "bun": "JavaScript",
+        "deno": "JavaScript",
+        "node": "JavaScript",
+        "quickjs": "JavaScript",
+        "php": "PHP",
+        "ruby": "Ruby",
+        "wasm": "WebAssembly",
+    }
+    assert set(runtimes) == set(families), sorted(runtimes)
+    verifier = (TESTS / "Dockerfile").read_text()
+    for tool in ("python3", "golang-go", "rustc", "cargo", "gcc"):
+        assert tool in verifier, tool
 
 
 def test_packaging_ships_runtime_files_only_and_flattens_cleanly():
@@ -2989,7 +3318,7 @@ def test_packaging_ships_runtime_files_only_and_flattens_cleanly():
 
 def test_the_pins_are_stated_once_and_agree():
     text = (SCRIPTS / "carve_text.py").read_text()
-    pins = dict(re.findall(r'^([A-Z0-9_]+) = "([^"]+)"', text, re.MULTILINE))
+    pins = dict(re.findall(r'^([A-Z0-9_]+) = \(?\s*"([^"]+)"', text, re.MULTILINE))
     assert pins["SPEC_TAG"] == pins["CARVE_RS_TAG"] == "0.1.14"
     assert re.fullmatch(r"[0-9a-f]{40}", pins["SPEC_COMMIT"]) and re.fullmatch(
         r"[0-9a-f]{40}", pins["CARVE_RS_COMMIT"]
@@ -3069,7 +3398,7 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
     builds = json.loads((TESTS / "verifier" / "upstream_builds.json").read_text())
     pins = dict(
         re.findall(
-            r'^([A-Z0-9_]+) = "([^"]+)"',
+            r'^([A-Z0-9_]+) = \(?\s*"([^"]+)"',
             (SCRIPTS / "carve_text.py").read_text(),
             re.MULTILINE,
         )
@@ -3092,10 +3421,114 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
     assert (
         main.index("seal(REBUILD)")
         < main.index("fetched_build(REBUILD")
+        < main.index("fingerprint(PROGRAM")
         < main.index("metrics = run_cases(PROGRAM")
     )
-    assert "network_open()" in verify, (
-        "the verifier self-checks its own network before grading"
+    assert main.index("network_denied(prefix)") < main.index("seal(REBUILD)"), (
+        "the network denial is checked before anything of the tree runs"
+    )
+
+
+def fingerprint_probes(tmp_path: Path, kinds: dict[str, int]) -> Path:
+    """A private directory with `kinds` probes of each kind (argv: the probe's id) and their
+    recorded answers ("original <id>")."""
+    private = tmp_path / "private"
+    private.mkdir(exist_ok=True)
+    probes, answers = [], {}
+    for kind, count in kinds.items():
+        for index in range(count):
+            probe_id = f"{kind[0].upper()}{index:03d}"
+            probes.append(
+                {
+                    "id": probe_id,
+                    "kind": f"{kind}:x",
+                    "files": {},
+                    "argv": [probe_id],
+                    "stdin": None,
+                }
+            )
+            answers[probe_id] = {"exit": 0, "stdout": f"original {probe_id}\n"}
+    (private / "probes.json").write_text(json.dumps({"probes": probes}))
+    (private / "probes_expected.json").write_text(json.dumps(answers))
+    return private
+
+
+def test_a_tree_that_answers_the_probes_as_the_original_does_is_refused(tmp_path):
+    """The fingerprint runs before the cases and is scored: a tree that matches the original on
+    24 of the 38 documents where it departs from the specification, or on 5 of its 11 commands
+    outside the brief, is refused (reward 0, not run); below both, nothing happens. Every probe
+    runs whatever the time left, and probes or answers that are missing are an evaluation error."""
+    private = fingerprint_probes(tmp_path, {"disagreement": 38, "command": 11})
+    match = tmp_path / "match"
+    program = tmp_path / "carve"
+    program.write_text(
+        f'#!/bin/sh\nif grep -qx "$1" {match}; then echo "original $1"; else echo mine; fi\n'
+    )
+    program.chmod(0o755)
+    (tmp_path / "tmp").mkdir()
+    report = verifier_call(
+        textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        verify.runcases.WORKSPACE = Path({str(tmp_path / "tmp" / "carve-case")!r})
+        verify.runcases.HOME = Path({str(tmp_path / "tmp" / "carve-home")!r})
+        verify.runcases.TEMP = Path({str(tmp_path / "tmp" / "carve-tmp")!r})
+        verify.PREEXEC = verify.runcases.limit
+        verify.TOTAL_SEC, verify.MARGIN_SEC = 0, 10**9   # no time left: the probes still all run
+        D = ["D%03d" % i for i in range(38)]
+        C = ["C%03d" % i for i in range(11)]
+        scenarios = {{"none": [], "d23": D[:23], "d24": D[:24], "c4": C[:4], "c5": C[:5],
+                     "both below": D[:23] + C[:4], "original": D + C[:9]}}
+        out = {{}}
+        for name, matched in scenarios.items():
+            Path({str(match)!r}).write_text("".join(m + "\\n" for m in matched))
+            result = verify.fingerprint(Path({str(program)!r}), Path({str(private)!r}), [], None)
+            out[name] = [result, verify.fingerprint_refusal(result)]
+        errors = []
+        answers = Path({str(private)!r}) / "probes_expected.json"
+        recorded = json.loads(answers.read_text())
+        answers.write_text(json.dumps({{k: v for k, v in recorded.items() if k != "C010"}}))
+        for _ in range(2):
+            try:
+                verify.fingerprint(Path({str(program)!r}), Path({str(private)!r}), [], None)
+                errors.append(None)
+            except verify.EvaluationError as exc:
+                errors.append(str(exc))
+            answers.unlink(missing_ok=True)
+        print(json.dumps([out, errors]))
+        """)
+    )
+    out, errors = report
+    assert out["none"] == [
+        {
+            "total": 49,
+            "matches_original": 0,
+            "by_kind": {
+                "disagreement": {"total": 38, "matches": 0},
+                "command": {"total": 11, "matches": 0},
+            },
+        },
+        None,
+    ]
+    for name in ("d23", "c4", "both below"):
+        assert out[name][1] is None, (name, out[name])
+    assert out["d24"][1] == (
+        "the tree matches carve-rs 0.1.14 on 24 of 49 probes (24 of the 38 documents where it "
+        "departs from the specification, 0 of the 11 commands of its own outside the brief): not run"
+    )
+    assert out["c5"][1].startswith("the tree matches carve-rs 0.1.14 on 5 of 49 probes")
+    assert out["original"][0]["matches_original"] == 47 and out["original"][1]
+    assert errors == [
+        "The fingerprint probes and their recorded answers do not match",
+        "The fingerprint probes are unreadable",
+    ]
+    verify = (TESTS / "verify.py").read_text()
+    assert 'FINGERPRINT_REFUSAL = {"disagreement": 24, "command": 5}' in verify
+    body = verify[
+        verify.index("def fingerprint(") : verify.index("def fingerprint_refusal(")
+    ]
+    assert "cutoff" not in body and "MARGIN_SEC" not in body, (
+        "the probes cannot be skipped on the deadline"
     )
 
 
@@ -3142,7 +3575,7 @@ def test_what_the_session_left_in_logs_artifacts_is_moved_aside_whole(tmp_path):
     assert (
         hook.index('> "$STATE/kill.json"')
         < hook.index('"""Move aside what the session left in /logs/artifacts')
-        < hook.index('"""Record whether a TCP connection')
+        < hook.index('"""Make /app/rebuild safe to copy')
     ), "after the ending, before anything is copied"
     assert "logs_artifacts=logs_artifacts" in hook
     flags = verifier_call(
@@ -3190,49 +3623,50 @@ def test_a_file_with_more_than_a_thousand_hard_links_is_refused(tmp_path):
 
 
 def test_no_timer_ends_the_session_and_the_work_limit_is_one_number():
-    """Round 12 (the judges' decision of 2026-11-24): nothing of the task stops the session before
-    the agent's limit. fsmaint-timer, its set-up entry and every mention of it are gone; both agent
-    limits are 34,560 s again with no comment; the sweep's WORK_LIMIT_SECONDS is the same number, and
-    fsmaint-reserve records when the work began, just before it does."""
-    assert not (TASK / "environment" / "fsmaint-timer").exists()
+    """Nothing of the task stops the session before the agent's limit: no timer and no watcher
+    (fsmaint-netcheck is gone with its set-up entry); the agent's limit is 43,200 s with no
+    comment, the sweep's WORK_LIMIT_SECONDS is the same number, and fsmaint-reserve --begin records
+    when the work began, just before it does."""
+    for gone in ("fsmaint-timer", "fsmaint-netcheck"):
+        assert not (TASK / "environment" / gone).exists(), gone
     toml = (TASK / "task.toml").read_text()
-    assert "fsmaint-timer" not in toml and "#" not in toml
+    assert "fsmaint-timer" not in toml and "netcheck" not in toml and "#" not in toml
     assert re.findall(r"\[(agent|steps\.agent)\]\ntimeout_sec = (\d+)", toml) == [
-        ("agent", "34560")
+        ("agent", "43200")
     ]
     for carrier in (
         TASK / "environment" / "Dockerfile",
         HOOK,
         SETUP,
-        WATCH,
         TESTS / "verify.py",
     ):
-        assert "timer" not in carrier.read_text().lower(), carrier.name
+        text = carrier.read_text().lower()
+        assert "timer" not in text and "netcheck" not in text, carrier.name
     assert (
         int(
             re.search(
                 r"^WORK_LIMIT_SECONDS=(\d+)", HOOK.read_text(), re.MULTILINE
             ).group(1)
         )
-        == 34560
+        == 43200
     )
     setup = SETUP.read_text()
     assert (
         'date +%s.%N > "$STATE/work-started"' in setup
-        and '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"'
+        and "setsid" not in setup
+        and '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-reserve --begin"'
         in toml
     )
 
 
-def test_a_capped_turn_that_keeps_writing_and_fetching_after_the_limit_counts_nothing_late(
+def test_a_capped_turn_that_keeps_writing_after_the_limit_keeps_it_flagged(
     tmp_path,
 ):
-    """Round 12: with no timer, a turn that runs to the agent's limit leaves its processes running
-    until the sweep stops them (nothing ends them at the limit). The end of such a work is its start
-    (written at set-up) plus 34,560 s: a file written in place after it is moved out and counts for
-    nothing, and a source fetched after it is refused, as after an end the net check observed.
-    Here the limit falls 1.5 s after an honest write, and a process of the turn writes and fetches
-    once it has passed."""
+    """With no timer, a turn that runs to the agent's limit leaves its processes running until the
+    sweep stops them (nothing ends them at the limit). The end of such a work is its start (written
+    at set-up) plus 43,200 s: a file written in place after it, and a source a link reaches that
+    changed after it, are kept and flagged. Here the limit falls 1.5 s after an honest write, and a
+    process of the turn writes and links once it has passed."""
     top = tmp_path / "rebuild"
     top.mkdir()
     program = "#!/bin/sh\necho early\n"
@@ -3241,16 +3675,16 @@ def test_a_capped_turn_that_keeps_writing_and_fetching_after_the_limit_counts_no
     state = top.parent / f".{top.name}-state"  # run_hook's own state directory
     state.mkdir()
     limit_at = time.time() + 1.5
-    (state / "work-started").write_text(f"{limit_at - 34560}\n")
-    fetched = tmp_path / "fetched"
+    (state / "work-started").write_text(f"{limit_at - 43200}\n")
+    outside = tmp_path / "outside"
     turn = subprocess.Popen(
         [
             "sh",
             "-c",
             (
-                f'sleep 2.5; echo late > "{top}/notes.txt"; mkdir -p "{fetched}"; '
-                f'printf "%s" "fetched after the limit" > "{fetched}/carve-real"; '
-                f'ln -s "{fetched}/carve-real" "{top}/blob"'
+                f'sleep 2.5; echo late > "{top}/notes.txt"; mkdir -p "{outside}"; '
+                f'printf "%s" "written after the limit" > "{outside}/helper.txt"; '
+                f'ln -s "{outside}/helper.txt" "{top}/helper.txt"'
             ),
         ]
     )
@@ -3260,10 +3694,9 @@ def test_a_capped_turn_that_keeps_writing_and_fetching_after_the_limit_counts_no
             sys.executable,
             "-I",
             "-",
-            str(state / "netcheck-open.json"),
             f"{time.time()}",
             str(state / "work-started"),
-            "34560",
+            "43200",
         ],
         check=False,
         input=hook_programs()["bound"],
@@ -3278,21 +3711,18 @@ def test_a_capped_turn_that_keeps_writing_and_fetching_after_the_limit_counts_no
     lines = run_hook(top, turn_end=float(end), turn_from=origin)
     record = json.loads((top / ".fsmaint.json").read_text())
     assert (
-        lines[0] == f"listed 1 {len(program)}"
-        and (top / "carve").read_text() == program
+        lines[0].startswith("listed 3 ") and (top / "carve").read_text() == program
     ), lines[:4]
-    assert not (top / "notes.txt").exists() and not (top / "blob").exists(), sorted(
-        os.listdir(top)
-    )
+    assert (top / "notes.txt").read_text() == "late\n" and (
+        top / "helper.txt"
+    ).read_text() == "written after the limit"
     assert (
         record["end_from"] == "limit"
-        and record["left_out_late"] == 1
-        and len(record["refused_copies"]) == 1
-    ), record["end_from"]
-    assert any(
-        line == "moved out notes.txt: it changed after the end of the work"
-        for line in lines
-    ), lines
+        and record["late_paths"] == ["notes.txt"]
+        and record["late_entries"] == 2
+        and record["refused_copies"] == []
+        and "(limit); copied and flagged" in record["copies"][0]["flagged"]
+    ), record
     flags = verifier_call(
         textwrap.dedent(f"""
         import json, verify
@@ -3304,8 +3734,9 @@ def test_a_capped_turn_that_keeps_writing_and_fetching_after_the_limit_counts_no
         "the work ran to its time limit; the end bound is its start plus that limit"
         in flags
     ), flags
-    assert any(
-        "changed after the end bound (left out or refused)" in flag for flag in flags
+    assert (
+        "2 entries changed after the end of the work (limit); kept: review them"
+        in flags
     ), flags
 
 
@@ -3352,11 +3783,11 @@ def test_the_flat_bundle_can_keep_the_tasks_name():
 def test_hard_links_across_the_top_level_and_deeper_keep_every_name_and_no_late_note(
     tmp_path,
 ):
-    """QA 24 follow-up R12-1: the sweep's own renames (the move out of the top level) move the change
-    time of the inode they rename, so a deeper name of a top-level file (cargo's hard links) read as
-    written after the end, and round 12 then left it out with a false note. Each inode's times are
-    now taken before anything of the sweep moves a name of it, and every name is judged by them: an
-    honest tree written wholly before the end keeps every name and has no late note."""
+    """The sweep's own renames (the move out of the top level) move the change time of the inode
+    they rename, so a deeper name of a top-level file (cargo's hard links) would read as written
+    after the end. Each inode's times are taken before anything of the sweep moves a name of it,
+    and every name is judged by them: an honest tree written wholly before the end keeps every name
+    and none is flagged as late."""
     top = tmp_path / "rebuild"
     (top / "lib").mkdir(parents=True)
     (top / "dir").mkdir()
@@ -3371,8 +3802,8 @@ def test_hard_links_across_the_top_level_and_deeper_keep_every_name_and_no_late_
     (top / "a").write_text("one file, two names at the top\n")
     os.link(top / "a", top / "b")
     time.sleep(1.2)
-    bound = time.time() - 0.1  # the end: after every write, past the 0.5 s skew
-    lines = run_hook(top, turn_end=bound, turn_from="netcheck")
+    bound = time.time() - 0.1  # the end: after every write
+    lines = run_hook(top, turn_end=bound, turn_from="limit")
     record = json.loads((top / ".fsmaint.json").read_text())
     names = sorted(
         str(path.relative_to(top))
@@ -3401,7 +3832,7 @@ def test_hard_links_across_the_top_level_and_deeper_keep_every_name_and_no_late_
         "after the end" in line for line in lines
     ), lines
     assert (
-        record["left_out_late"] == 0
+        record["late_paths"] == []
         and record["late_entries"] == 0
-        and record["end_from"] == "netcheck"
+        and record["end_from"] == "limit"
     ), record["late_entries"]

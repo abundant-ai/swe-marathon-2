@@ -26,7 +26,7 @@ from verifier import recorder, runcases
 REBUILD = Path("/app/rebuild")
 PROGRAM = REBUILD / "carve"
 MARK = ".fsmaint"  # written into /app/rebuild by the sweep (environment/fsmaint-sweep) once the work has ended
-RECORD = ".fsmaint.json"  # the sweep's record: the hosts probed, the processes found, every entry; never scored
+RECORD = ".fsmaint.json"  # the sweep's record: the processes found, every entry; never scored
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
 MARK_PREFIX = (
     1 << 16
@@ -36,24 +36,46 @@ MARK_PREFIX = (
 # record and tree are in place, "stopped" when it ended itself with entries left unmeasured.
 SWEEP_STATE = Path("/var/lib/fsmaint/out/sweep.json")
 SWEEP_STATE_LIMIT = 8192  # bytes of it read, at most
-# Public hosts the original can be fetched from; nothing runs if one of them can be reached.
-NETWORK_HOSTS = (
-    ("github.com", 443),
-    ("pypi.org", 443),
-    ("proxy.golang.org", 443),
-    ("registry.npmjs.org", 443),
+# How every process that runs the program starts: the resource limits, then the network denied to
+# it and to everything it starts (runcases.confine), whatever the machine's own network allows.
+PREEXEC = runcases.confine
+# Run as the program is: which socket families it may open (errno 0 where it could, else the
+# errno), and whether io_uring can be set up; the network must be denied before any case runs.
+NETWORK_PROBE = (
+    "import ctypes, json, socket\n"
+    "seen = {}\n"
+    "for name in ('AF_INET', 'AF_INET6', 'AF_UNIX'):\n"
+    "    try:\n"
+    "        socket.socket(getattr(socket, name), socket.SOCK_STREAM).close()\n"
+    "        seen[name] = 0\n"
+    "    except OSError as exc:\n"
+    "        seen[name] = exc.errno or -1\n"
+    "params = ctypes.create_string_buffer(120)\n"
+    "libc = ctypes.CDLL(None, use_errno=True)\n"
+    "seen['io_uring_setup'] = 0 if libc.syscall(425, 1, params) >= 0 else ctypes.get_errno()\n"
+    "print(json.dumps(seen))\n"
 )
 # Every build of the original that upstream publishes ready to run, and text they all hold that a
 # renderer written from the specification does not (scripts/upstream_builds.py): a file in the tree
 # that is one of them, or holds enough of that text, is a fetched original.
 UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 REWARD_FILES = ("reward.txt", "reward.json")
+# A tree that matches the original on at least this many fingerprint probes of one kind is the
+# original, however re-encoded or wrapped, and is refused (reward 0). Of the 38 documents on which
+# the original departs from the specification, renderers written from the specification match
+# 2 to 9 and the original all 38; of its 11 commands outside the brief, which a renderer that
+# follows the brief answers with status 2, they match none and the original nine or more.
+FINGERPRINT_REFUSAL = {"disagreement": 24, "command": 5}
+FINGERPRINT_KINDS = {
+    "disagreement": "documents where it departs from the specification",
+    "command": "commands of its own outside the brief",
+}
 TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
 MAX_ENTRIES = 200_000  # entries in the tree, at most (the instruction's 200,000; its top, the mark and the record not counted); more is not run
-MAX_BYTES = (
-    2 << 30
-)  # bytes of the tree's regular files (each inode once), at most; more is not run
+# Bytes of the tree's regular files (each inode once), at most, as the sweep counts them (the
+# instruction's "under 2 GB"); more is not run.
+MAX_BYTES = 2_000_000_000
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/carve hashed for metrics.json, at most
 RESERVE_BYTES = (
     512 << 20
@@ -143,25 +165,59 @@ def sandbox_problems(
 
 
 def probe(prefix: list[str], argv: list[str], fallback: list[str] | None = None) -> str:
-    """What a command prints when started exactly as the program is; where it fails and a
-    `fallback` command is given, what that prints."""
+    """What a command prints when started exactly as the program is (PREEXEC, then `prefix`);
+    where it fails and a `fallback` command is given, what that prints.
+
+    Raises:
+        EvaluationError: The command could not be started that way, or it and the fallback failed.
+    """
     for command in (argv, fallback):
         if command is None:
             break
-        done = subprocess.run(
-            prefix + command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            preexec_fn=runcases.limit,
-            env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
-        )
+        try:
+            done = subprocess.run(
+                prefix + command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                preexec_fn=PREEXEC,
+                env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise EvaluationError(
+                f"The program's sandbox could not be set up: {type(exc).__name__}: {exc}"
+            ) from exc
         if done.returncode == 0:
             return done.stdout
     raise EvaluationError(
         f"Could not drop privileges: {(fallback or argv)[0]} exited {done.returncode}"
     )
+
+
+def network_denied(prefix: list[str]) -> dict:
+    """What a process started exactly as the program is may open (NETWORK_PROBE), which must be no
+    socket but AF_UNIX's and no io_uring: the network is denied to every run whatever the machine's
+    network allows, and this is the test that the denial holds.
+
+    Raises:
+        EvaluationError: The denial does not hold or could not be checked.
+    """
+    output = probe(prefix, [sys.executable, "-I", "-c", NETWORK_PROBE])
+    try:
+        seen = json.loads(output.strip().splitlines()[-1])
+    except (ValueError, IndexError) as exc:
+        raise EvaluationError("The network denial could not be checked") from exc
+    if not isinstance(seen, dict) or not (
+        seen.get("AF_INET") == runcases.EACCES
+        and seen.get("AF_INET6") == runcases.EACCES
+        and seen.get("AF_UNIX") == 0
+        and seen.get("io_uring_setup") not in (0, None)
+    ):
+        raise EvaluationError(
+            f"The network is not denied to the program's runs: {seen}"
+        )
+    return seen
 
 
 def pick_id(
@@ -669,9 +725,9 @@ def mark_says(top: Path) -> tuple[list[str], bool]:
 
 
 def manifest_record(top: Path) -> dict:
-    """What the sweep's record says, for metrics.json and review: whether the
-    public internet answered when the session ended, the processes then alive, how many
-    passes of ending ended them, and the tree's entries (their number and the twenty with the
+    """What the sweep's record says, for metrics.json and review: the processes alive when the
+    session ended, how many passes of ending ended them, the entries changed after the end of the
+    work (kept, and flagged here), and the tree's entries (their number and the twenty with the
     latest change times). Read in a bounded way; never raising, never scored."""
     try:
         path = top / RECORD
@@ -690,17 +746,17 @@ def manifest_record(top: Path) -> dict:
         summary = {
             key: record.get(key)
             for key in (
-                "hosts",
-                "any_open",
                 "process_count",
                 "kill_passes",
                 "processes_left",
+                "threads_left",
                 "listed",
                 "listing_complete",
                 "end_bound",
                 "end_from",
                 "sweep_started_at",
                 "late_entries",
+                "late_paths",
                 "ending",
                 "logs_artifacts",
             )
@@ -710,8 +766,6 @@ def manifest_record(top: Path) -> dict:
             "entries_listed": len(entries),
             "copies": record.get("copies", []),
             "refused_copies": record.get("refused_copies", []),
-            "netcheck": record.get("netcheck"),
-            "netcheck_open": record.get("netcheck_open"),
             "latest_changes": [
                 {
                     key: item.get(key)
@@ -721,18 +775,18 @@ def manifest_record(top: Path) -> dict:
             ],
         }
         flags = []
-        if record.get("any_open"):
-            flags.append("a public host answered after the end")
         if record.get("processes_left"):
-            flags.append(f"{record.get('processes_left')} processes survived the kill")
+            flags.append(
+                f"{record.get('processes_left')} threads of the session survived the kill"
+            )
+        if record.get("threads_left"):
+            flags.append(
+                f"{record.get('threads_left')} threads of the session were alive when the tree was to be listed"
+            )
         if record.get("late_entries"):
             flags.append(
-                f"{record.get('late_entries')} entries changed after the end bound"
-                + (
-                    " (left out or refused)"
-                    if record.get("end_from") in ("netcheck", "limit")
-                    else " (listed)"
-                )
+                f"{record.get('late_entries')} entries changed after the end of the work ({record.get('end_from')}); "
+                "kept: review them"
             )
         if record.get("copies"):
             flags.append(
@@ -745,30 +799,16 @@ def manifest_record(top: Path) -> dict:
         ]
         if flagged:
             flags.append(
-                f"{len(flagged)} copies hold files changed after the sweep's start, copied because no end bound "
-                "was observed: review them"
-            )
-        refused_late = [
-            item
-            for item in (record.get("refused_copies") or [])
-            if isinstance(item, dict) and item.get("late_files")
-        ]
-        if refused_late:
-            flags.append(
-                f"{len(refused_late)} outside sources changed at or after the end bound were refused: review them"
+                f"{len(flagged)} copies hold files changed after the end of the work; kept: review them"
             )
         if record.get("end_from") == "limit":
             flags.append(
                 "the work ran to its time limit; the end bound is its start plus that limit"
             )
-        elif not (record.get("netcheck_open") or {}).get("first_open_at"):
-            flags.append(
-                "no net check observed the end; the end bound is the sweep's start"
-            )
         ending = record.get("ending") if isinstance(record.get("ending"), dict) else {}
         if "processes_left" in record and record.get("processes_left") is None:
             flags.append(
-                "how many processes were left alive is unknown: a process listing did not answer"
+                "how many threads were left alive is unknown: a listing did not answer"
             )
         if ending.get("freeze_ran_out") is True or ending.get("kill_ran_out") is True:
             flags.append(
@@ -874,21 +914,6 @@ def fetched_build(top: Path, builds: dict) -> str | None:
     return None
 
 
-def network_open() -> str | None:
-    """A public host the verifier can reach, or None: the separate verifier must have no network,
-    and a provider that left it open would let a case fetch the original. Each host is tried once,
-    half a second."""
-    import socket
-
-    for host, port in NETWORK_HOSTS:
-        try:
-            with socket.create_connection((host, port), timeout=0.5):
-                return f"{host}:{port}"
-        except OSError:
-            continue
-    return None
-
-
 def free_space() -> dict:
     """The bytes free in /tmp and /logs/verifier, -1 where a filesystem reports no size."""
     return {
@@ -964,12 +989,17 @@ def fingerprint(
     private: Path,
     prefix: list[str],
     ids: tuple[int, int] | None,
-    cutoff_at: float,
 ) -> dict:
-    """Run the program on the fingerprint probes and count how many match the original's
-    answer: documents where the original and the spec model disagree, and the original's
-    own out-of-scope commands. A renderer written from the specification matches few; the original,
-    however re-encoded, matches all. Never scored. Private inputs missing is no error."""
+    """Run the program on every fingerprint probe and count, by kind, how many match the
+    original's answer: `disagreement` probes are documents on which the original departs from the
+    specification, `command` probes are the original's own commands outside the brief. A renderer
+    written from the specification matches few of either; the original, however re-encoded or
+    wrapped, matches nearly all of the documents. Every probe runs, whatever the time: there are
+    few, and each has the 2 s of a case. A probe the program cannot run matches nothing.
+
+    Raises:
+        EvaluationError: The probes or their recorded answers are unreadable or do not match.
+    """
     try:
         probes = json.loads((private / "probes.json").read_text(encoding="utf-8"))[
             "probes"
@@ -977,26 +1007,49 @@ def fingerprint(
         answers = json.loads(
             (private / "probes_expected.json").read_text(encoding="utf-8")
         )
-    except (OSError, ValueError, KeyError):
-        return {}
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise EvaluationError("The fingerprint probes are unreadable") from exc
+    if not probes or any(probe["id"] not in answers for probe in probes):
+        raise EvaluationError(
+            "The fingerprint probes and their recorded answers do not match"
+        )
     result = {"total": 0, "matches_original": 0, "by_kind": {}}
     for probe in probes:
-        if probe["id"] not in answers or time.monotonic() > cutoff_at - MARGIN_SEC:
-            continue
         kind = probe.get("kind", "?").split(":", 1)[0]
         tally = result["by_kind"].setdefault(kind, {"total": 0, "matches": 0})
+        result["total"] += 1
+        tally["total"] += 1
         try:
             if ids is not None:
                 reset(ids[0])
-            got = runcases.run_case([str(program)], probe, prefix=prefix, ids=ids)
-        except Exception:  # noqa: BLE001, S112 - Continue processing the other records.
+            got = runcases.run_case(
+                [str(program)], probe, prefix=prefix, ids=ids, preexec=PREEXEC
+            )
+        except Exception:  # noqa: BLE001, S112 - A probe that cannot run matches nothing.
             continue
-        result["total"] += 1
-        tally["total"] += 1
         if runcases.matches(got, answers[probe["id"]]):
             result["matches_original"] += 1
             tally["matches"] += 1
     return result
+
+
+def fingerprint_refusal(result: dict) -> str | None:
+    """Why a tree is refused as the original by its fingerprint (`fingerprint`): it matches the
+    original on at least FINGERPRINT_REFUSAL of the probes of one kind; None otherwise."""
+    by_kind = result.get("by_kind", {})
+    matched = {
+        kind: by_kind.get(kind, {}).get("matches", 0) for kind in FINGERPRINT_REFUSAL
+    }
+    if all(matched[kind] < most for kind, most in FINGERPRINT_REFUSAL.items()):
+        return None
+    counts = ", ".join(
+        f"{matched[kind]} of the {by_kind.get(kind, {}).get('total', 0)} {FINGERPRINT_KINDS[kind]}"
+        for kind in FINGERPRINT_REFUSAL
+    )
+    return (
+        f"the tree matches carve-rs 0.1.14 on {result.get('matches_original', 0)} of "
+        f"{result.get('total', 0)} probes ({counts}): not run"
+    )
 
 
 def run_cases(
@@ -1093,7 +1146,9 @@ def run_cases(
                             )
                         stop = "out of disk space after a cleanup; the remaining cases count as failed"
                         break
-                got = runcases.run_case([str(program)], case, prefix=prefix, ids=ids)
+                got = runcases.run_case(
+                    [str(program)], case, prefix=prefix, ids=ids, preexec=PREEXEC
+                )
             except EvaluationError:
                 raise
             except Exception as exc:  # noqa: BLE001 - Handle failures at the task boundary.
@@ -1226,14 +1281,10 @@ def main() -> int:
         record = manifest_record(REBUILD)
         notes = notes + [f"sweep: {flag}" for flag in record.get("flags", [])]
         builds = upstream_builds()
-        reachable = network_open()
-        if (
-            reachable is not None
-        ):  # the verifier must have no network; a provider that left it open runs nothing
-            raise EvaluationError(
-                f"The verifier can reach {reachable}; it must run with no network"
-            )
         prefix, ids, limits = sandbox()
+        # Every run of the program is denied the network (PREEXEC); a denial that does not hold is
+        # an error before anything of the tree runs, whatever the machine's own network is.
+        network = network_denied(prefix)
         refused = "the sweep refused the tree: not run" if refused_tree else None
         if refused is None:
             try:
@@ -1244,11 +1295,17 @@ def main() -> int:
                 refused = f"{exc}: not run"
         if (
             refused is None
-        ):  # the original or another engine, fetched after the work ended: nothing of it was written here
+        ):  # a published build of the original or another engine, or a runtime
             found = fetched_build(REBUILD, builds)
             refused = f"{found}: not run" if found else None
         LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
         program = identity(PROGRAM)
+        probes = None
+        if (
+            refused is None
+        ):  # the original however re-encoded or wrapped, by how it behaves
+            probes = fingerprint(PROGRAM, tests / "private", prefix, ids)
+            refused = fingerprint_refusal(probes)
         if refused:
             metrics = {
                 "cases_total": None,
@@ -1258,9 +1315,8 @@ def main() -> int:
             }
         else:
             metrics = run_cases(PROGRAM, tests / "private", prefix, ids, cutoff_at)
-            metrics["fingerprint"] = fingerprint(
-                PROGRAM, tests / "private", prefix, ids, cutoff_at
-            )
+        if probes is not None:
+            metrics["fingerprint"] = probes
             final_cleanup(ids[0], min(cutoff_at, time.monotonic() + CLEANUP_SEC))
         metrics["notes"] = notes + metrics["notes"]
         # The reward first, in its reserved place, then renamed (no new space): nothing after it
@@ -1275,6 +1331,7 @@ def main() -> int:
         try:
             metrics.update(
                 limits=limits,
+                network=network,
                 program=program,
                 host=recorder.host(),
                 free_at_start=start_space,

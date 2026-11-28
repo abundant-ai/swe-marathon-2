@@ -6,11 +6,10 @@ Every team in our company writes its pages in Carve, a lightweight markup langua
 from Djot: documentation and handbooks, release notes and reports, runbooks, postmortems and
 meeting notes. Until last month a hosted service rendered them for us with the `carve` command of
 carve-rs 0.1.14, the Rust implementation of the Carve 0.1.14 specification. Our audit then moved
-the build into an environment where nothing runs but code our own team wrote and the approved
-toolchains, Python 3.12, Go and Rust with their standard libraries: no third-party binaries or
-packages, and no network. So we need a renderer of our own, written from the published
-specification and documentation, that turns every page into exactly the HTML that carve-rs 0.1.14
-produced.
+the build into an environment without network access, where no Carve tool from outside runs. So
+we need a renderer of our own, written from the published specification and documentation, that
+turns every page into exactly the HTML that carve-rs 0.1.14 produced. You have up to 12 hours to
+build and test the renderer.
 
 Many people have written those pages over the years, and between them they use all of the core
 language, nested in every way it allows: inline markup and attributes, lists, block quotes and
@@ -38,22 +37,23 @@ fail on pages nobody touched. Write that renderer.
   options, and more. Where the documentation and the specification disagree, the specification
   is right.
 - The audit admits the specification and these documentation pages as references and nothing else
-  from outside: no third-party program and no output of one. So carve-rs (its builds and its
-  source), the other Carve engines and the rest of upstream's repositories were not reviewed and
-  are not here, although the documentation mentions them; they may not be brought in. Many of our
-  pages hold customer and incident details, so neither they nor the HTML rendered from them leaves
-  the production build, and we never ran carve-rs ourselves. carve-rs 0.1.14 implements this
-  specification, so read it closely; what its command line does beyond the specification is
-  described below.
-- There is no network access. Python 3.12, Go and Rust (`rustc` and `cargo`, standard library
-  only) are installed, here and where your renderer will run; use whichever you prefer, since we
-  maintain all three. No Carve library or tool is available.
+  of upstream's. So carve-rs (its builds and its source), the other Carve engines (with the
+  JavaScript, PHP, Ruby and WebAssembly runtimes they run on) and the rest of upstream's
+  repositories were not reviewed and are not here, although the documentation mentions them; they
+  may not be brought in. Many of our pages hold customer and incident details, so neither they nor
+  the HTML rendered from them leaves the production build, and we never ran carve-rs ourselves.
+  carve-rs 0.1.14 implements this specification, so read it closely; what its command line does
+  beyond the specification is described below.
+- There is no network access. Python 3.12, Go, Rust (`rustc` and `cargo`) and gcc are installed,
+  here and where your renderer will run, each with its standard library and nothing more; use
+  whichever you prefer. No Carve library or tool is available.
 
 ## What to deliver
 
 Your implementation in `/app/rebuild`, with an executable `/app/rebuild/carve`. We install
-`/app/rebuild` on the build machines as one directory, so keep it
-under 2 GB and 200,000 files and directories, with no file that has more than 1,000 hard links.
+`/app/rebuild` on the build machines as one directory, so keep it under 2 GB (2,000,000,000 bytes)
+and 200,000 files, directories and links, with no file that has more than 1,000 hard links and no
+path inside it longer than 2,048 bytes.
 
 - `carve [--safe] [--html] [FILE]` renders the Carve document FILE, or standard input when FILE
   is missing or `-`, to HTML on standard output and exits 0. The options may come before or
@@ -93,12 +93,9 @@ under 2 GB and 200,000 files and directories, with no file that has more than 1,
   standard input and output are pipes, never a terminal, and its standard error is discarded. The
   sandbox allows an 8 MB stack, at most 512 processes and threads, files of at most 256 MB and no
   core files.
-- Each run finishes within 2 seconds, which is what our build gives one page, uses at most 4 GB
-  of memory, and adds at most 1 GB and 100,000 files and directories to the disk; carve-rs took a
-  few milliseconds per page.
-- We will maintain this code for years: keep it modular, with reading the source and its block
-  layout, inline parsing, resolution (references, footnotes, numbering), HTML serialization and
-  the command line in separate parts.
+- Each run finishes within 2 seconds, which is what our build gives one page, writes at most 1 MB
+  (1,000,000 bytes) to standard output, uses at most 4 GB of memory, and adds at most 1 GB and
+  100,000 files and directories to the disk; carve-rs took a few milliseconds per page.
 
 ## Completion
 

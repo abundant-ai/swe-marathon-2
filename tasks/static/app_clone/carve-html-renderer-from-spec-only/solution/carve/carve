@@ -1,0 +1,33 @@
+#!/usr/bin/python3 -I
+# carve - a renderer for Carve 0.1.14, written from its specification.
+# The parser recurses per nesting level, so it runs on a thread with a large
+# stack; deeply nested documents stay within the nesting cap of PART 9 §25.
+import os
+import sys
+import threading
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+sys.setrecursionlimit(1000000)
+
+
+def _run(result):
+    from carvelib.cli import main
+
+    try:
+        result.append(main(sys.argv[1:]))
+    except BrokenPipeError:
+        result.append(0)
+
+
+if __name__ == "__main__":
+    threading.stack_size(512 * 1024 * 1024)
+    result = []
+    t = threading.Thread(target=_run, args=(result,))
+    t.start()
+    t.join()
+    code = result[0] if result else 1
+    try:
+        sys.stdout.flush()
+    except BrokenPipeError:
+        pass
+    os._exit(code)
