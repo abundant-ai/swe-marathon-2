@@ -886,7 +886,7 @@ def test_the_tree_pulled_from_the_v2_oracle_trial_replays_through_the_whole_run(
         cutoff_at = time.monotonic() + 600
         private = Path({str(private)!r})
         metrics = verify.run_cases(verify.PROGRAM, private, [], ids, cutoff_at)
-        metrics["fingerprint"] = verify.fingerprint(verify.PROGRAM, private, [], ids, cutoff_at)
+        metrics["fingerprint"] = verify.fingerprint(verify.PROGRAM, private, [], ids)
         verify.final_cleanup(ids[0], time.monotonic() + 30)
         print(json.dumps([notes, refused, record, list(ids), fetched, metrics]))
     """)
@@ -1343,12 +1343,16 @@ def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path
         '(output / ".reward.tmp").write_text("--------")',
         "manifest(REBUILD)",
         "sandbox()",
+        "network_denied(prefix)",
         "seal(REBUILD)",
+        "fetched_build(REBUILD",
+        "probes = fingerprint(PROGRAM",
+        "refused = fingerprint_refusal(probes)",
         "metrics = run_cases(PROGRAM",
         "final_cleanup(ids[0], min(cutoff_at",
         'write_in_place(output / ".reward.tmp"',
         'os.replace(output / ".reward.tmp", output / "reward.txt")',
-        'write_in_place(output / "metrics.json"',
+        'output / "metrics.json",',
     ]
     assert [main.index(step) for step in order] == sorted(
         main.index(step) for step in order
@@ -3271,10 +3275,114 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
     assert (
         main.index("seal(REBUILD)")
         < main.index("fetched_build(REBUILD")
+        < main.index("fingerprint(PROGRAM")
         < main.index("metrics = run_cases(PROGRAM")
     )
     assert main.index("network_denied(prefix)") < main.index("seal(REBUILD)"), (
         "the network denial is checked before anything of the tree runs"
+    )
+
+
+def fingerprint_probes(tmp_path: Path, kinds: dict[str, int]) -> Path:
+    """A private directory with `kinds` probes of each kind (argv: the probe's id) and their
+    recorded answers ("original <id>")."""
+    private = tmp_path / "private"
+    private.mkdir(exist_ok=True)
+    probes, answers = [], {}
+    for kind, count in kinds.items():
+        for index in range(count):
+            probe_id = f"{kind[0].upper()}{index:03d}"
+            probes.append(
+                {
+                    "id": probe_id,
+                    "kind": f"{kind}:x",
+                    "files": {},
+                    "argv": [probe_id],
+                    "stdin": None,
+                }
+            )
+            answers[probe_id] = {"exit": 0, "stdout": f"original {probe_id}\n"}
+    (private / "probes.json").write_text(json.dumps({"probes": probes}))
+    (private / "probes_expected.json").write_text(json.dumps(answers))
+    return private
+
+
+def test_a_tree_that_answers_the_probes_as_the_original_does_is_refused(tmp_path):
+    """The fingerprint runs before the cases and is scored: a tree that matches the original on
+    24 of the 38 documents where it departs from the specification, or on 5 of its 11 commands
+    outside the brief, is refused (reward 0, not run); below both, nothing happens. Every probe
+    runs whatever the time left, and probes or answers that are missing are an evaluation error."""
+    private = fingerprint_probes(tmp_path, {"disagreement": 38, "command": 11})
+    match = tmp_path / "match"
+    program = tmp_path / "carve"
+    program.write_text(
+        f'#!/bin/sh\nif grep -qx "$1" {match}; then echo "original $1"; else echo mine; fi\n'
+    )
+    program.chmod(0o755)
+    (tmp_path / "tmp").mkdir()
+    report = verifier_call(
+        textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        verify.runcases.WORKSPACE = Path({str(tmp_path / "tmp" / "carve-case")!r})
+        verify.runcases.HOME = Path({str(tmp_path / "tmp" / "carve-home")!r})
+        verify.runcases.TEMP = Path({str(tmp_path / "tmp" / "carve-tmp")!r})
+        verify.PREEXEC = verify.runcases.limit
+        verify.TOTAL_SEC, verify.MARGIN_SEC = 0, 10**9   # no time left: the probes still all run
+        D = ["D%03d" % i for i in range(38)]
+        C = ["C%03d" % i for i in range(11)]
+        scenarios = {{"none": [], "d23": D[:23], "d24": D[:24], "c4": C[:4], "c5": C[:5],
+                     "both below": D[:23] + C[:4], "original": D + C[:9]}}
+        out = {{}}
+        for name, matched in scenarios.items():
+            Path({str(match)!r}).write_text("".join(m + "\\n" for m in matched))
+            result = verify.fingerprint(Path({str(program)!r}), Path({str(private)!r}), [], None)
+            out[name] = [result, verify.fingerprint_refusal(result)]
+        errors = []
+        answers = Path({str(private)!r}) / "probes_expected.json"
+        recorded = json.loads(answers.read_text())
+        answers.write_text(json.dumps({{k: v for k, v in recorded.items() if k != "C010"}}))
+        for _ in range(2):
+            try:
+                verify.fingerprint(Path({str(program)!r}), Path({str(private)!r}), [], None)
+                errors.append(None)
+            except verify.EvaluationError as exc:
+                errors.append(str(exc))
+            answers.unlink(missing_ok=True)
+        print(json.dumps([out, errors]))
+        """)
+    )
+    out, errors = report
+    assert out["none"] == [
+        {
+            "total": 49,
+            "matches_original": 0,
+            "by_kind": {
+                "disagreement": {"total": 38, "matches": 0},
+                "command": {"total": 11, "matches": 0},
+            },
+        },
+        None,
+    ]
+    for name in ("d23", "c4", "both below"):
+        assert out[name][1] is None, (name, out[name])
+    assert out["d24"][1] == (
+        "the tree matches carve-rs 0.1.14 on 24 of 49 probes (24 of the 38 documents where it "
+        "departs from the specification, 0 of the 11 commands of its own outside the brief): not run"
+    )
+    assert out["c5"][1].startswith("the tree matches carve-rs 0.1.14 on 5 of 49 probes")
+    assert out["original"][0]["matches_original"] == 47 and out["original"][1]
+    assert errors == [
+        "The fingerprint probes and their recorded answers do not match",
+        "The fingerprint probes are unreadable",
+    ]
+    verify = (TESTS / "verify.py").read_text()
+    assert 'FINGERPRINT_REFUSAL = {"disagreement": 24, "command": 5}' in verify
+    body = verify[
+        verify.index("def fingerprint(") : verify.index("def fingerprint_refusal(")
+    ]
+    assert "cutoff" not in body and "MARGIN_SEC" not in body, (
+        "the probes cannot be skipped on the deadline"
     )
 
 

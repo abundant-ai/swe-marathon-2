@@ -233,6 +233,7 @@ import json, sys, time
 from pathlib import Path
 sys.path.insert(0, {str(tests)!r})
 import verify
+verify.PREEXEC = verify.runcases.limit   # no seccomp filter on this machine; runs are not sandboxed here
 work = Path({str(work)!r})
 verify.runcases.WORKSPACE = work / "tmp" / "carve-case"
 verify.runcases.HOME = work / "tmp" / "carve-home"
@@ -247,12 +248,14 @@ for name in ("reference", "empty", "silent"):
     record = verify.manifest_record(top)
     fetched = verify.fetched_build(top, builds)
     started = time.monotonic()
-    if refused or fetched:
-        metrics = {{"reward": 0.0, "cases_passed": 0, "cases_total": None, "notes": [fetched or "refused"], "by_kind": {{}},
-                   "timeouts": 0, "failed_sample": [], "fingerprint": {{}}, "diagnostics": {{}}}}
+    probes = None if refused or fetched else verify.fingerprint(top / "carve", work / "private", [], None)
+    matched = verify.fingerprint_refusal(probes) if probes is not None else None
+    if refused or fetched or matched:
+        metrics = {{"reward": 0.0, "cases_passed": 0, "cases_total": None, "notes": [fetched or matched or "refused"],
+                   "by_kind": {{}}, "timeouts": 0, "failed_sample": [], "fingerprint": probes or {{}}, "diagnostics": {{}}}}
     else:
         metrics = verify.run_cases(top / "carve", work / "private", [], None)
-        metrics["fingerprint"] = verify.fingerprint(top / "carve", work / "private", [], None, time.monotonic() + 600)
+        metrics["fingerprint"] = probes
     results[name] = {{"reward": metrics["reward"], "passed": metrics["cases_passed"], "total": metrics["cases_total"],
                      "notes": notes + metrics["notes"], "seconds": round(time.monotonic() - started, 1),
                      "by_kind": metrics["by_kind"], "timeouts": metrics["timeouts"], "failed_sample": metrics["failed_sample"][:10],

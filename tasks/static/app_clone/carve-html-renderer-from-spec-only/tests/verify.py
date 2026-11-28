@@ -60,6 +60,16 @@ NETWORK_PROBE = (
 # that is one of them, or holds enough of that text, is a fetched original.
 UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 REWARD_FILES = ("reward.txt", "reward.json")
+# A tree that matches the original on at least this many fingerprint probes of one kind is the
+# original, however re-encoded or wrapped, and is refused (reward 0). Of the 38 documents on which
+# the original departs from the specification, renderers written from the specification match
+# 2 to 9 and the original all 38; of its 11 commands outside the brief, which a renderer that
+# follows the brief answers with status 2, they match none and the original nine or more.
+FINGERPRINT_REFUSAL = {"disagreement": 24, "command": 5}
+FINGERPRINT_KINDS = {
+    "disagreement": "documents where it departs from the specification",
+    "command": "commands of its own outside the brief",
+}
 TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
 MAX_ENTRIES = 200_000  # entries in the tree, at most (the instruction's 200,000; its top, the mark and the record not counted); more is not run
@@ -995,12 +1005,17 @@ def fingerprint(
     private: Path,
     prefix: list[str],
     ids: tuple[int, int] | None,
-    cutoff_at: float,
 ) -> dict:
-    """Run the program on the fingerprint probes and count how many match the original's
-    answer: documents where the original and the spec model disagree, and the original's
-    own out-of-scope commands. A renderer written from the specification matches few; the original,
-    however re-encoded, matches all. Never scored. Private inputs missing is no error."""
+    """Run the program on every fingerprint probe and count, by kind, how many match the
+    original's answer: `disagreement` probes are documents on which the original departs from the
+    specification, `command` probes are the original's own commands outside the brief. A renderer
+    written from the specification matches few of either; the original, however re-encoded or
+    wrapped, matches nearly all of the documents. Every probe runs, whatever the time: there are
+    few, and each has the 2 s of a case. A probe the program cannot run matches nothing.
+
+    Raises:
+        EvaluationError: The probes or their recorded answers are unreadable or do not match.
+    """
     try:
         probes = json.loads((private / "probes.json").read_text(encoding="utf-8"))[
             "probes"
@@ -1008,28 +1023,49 @@ def fingerprint(
         answers = json.loads(
             (private / "probes_expected.json").read_text(encoding="utf-8")
         )
-    except (OSError, ValueError, KeyError):
-        return {}
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise EvaluationError("The fingerprint probes are unreadable") from exc
+    if not probes or any(probe["id"] not in answers for probe in probes):
+        raise EvaluationError(
+            "The fingerprint probes and their recorded answers do not match"
+        )
     result = {"total": 0, "matches_original": 0, "by_kind": {}}
     for probe in probes:
-        if probe["id"] not in answers or time.monotonic() > cutoff_at - MARGIN_SEC:
-            continue
         kind = probe.get("kind", "?").split(":", 1)[0]
         tally = result["by_kind"].setdefault(kind, {"total": 0, "matches": 0})
+        result["total"] += 1
+        tally["total"] += 1
         try:
             if ids is not None:
                 reset(ids[0])
             got = runcases.run_case(
                 [str(program)], probe, prefix=prefix, ids=ids, preexec=PREEXEC
             )
-        except Exception:  # noqa: BLE001, S112 - Continue processing the other records.
+        except Exception:  # noqa: BLE001, S112 - A probe that cannot run matches nothing.
             continue
-        result["total"] += 1
-        tally["total"] += 1
         if runcases.matches(got, answers[probe["id"]]):
             result["matches_original"] += 1
             tally["matches"] += 1
     return result
+
+
+def fingerprint_refusal(result: dict) -> str | None:
+    """Why a tree is refused as the original by its fingerprint (`fingerprint`): it matches the
+    original on at least FINGERPRINT_REFUSAL of the probes of one kind; None otherwise."""
+    by_kind = result.get("by_kind", {})
+    matched = {
+        kind: by_kind.get(kind, {}).get("matches", 0) for kind in FINGERPRINT_REFUSAL
+    }
+    if all(matched[kind] < most for kind, most in FINGERPRINT_REFUSAL.items()):
+        return None
+    counts = ", ".join(
+        f"{matched[kind]} of the {by_kind.get(kind, {}).get('total', 0)} {FINGERPRINT_KINDS[kind]}"
+        for kind in FINGERPRINT_REFUSAL
+    )
+    return (
+        f"the tree matches carve-rs 0.1.14 on {result.get('matches_original', 0)} of "
+        f"{result.get('total', 0)} probes ({counts}): not run"
+    )
 
 
 def run_cases(
@@ -1275,11 +1311,17 @@ def main() -> int:
                 refused = f"{exc}: not run"
         if (
             refused is None
-        ):  # the original or another engine, fetched after the work ended: nothing of it was written here
+        ):  # a published build of the original or another engine, or a runtime
             found = fetched_build(REBUILD, builds)
             refused = f"{found}: not run" if found else None
         LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
         program = identity(PROGRAM)
+        probes = None
+        if (
+            refused is None
+        ):  # the original however re-encoded or wrapped, by how it behaves
+            probes = fingerprint(PROGRAM, tests / "private", prefix, ids)
+            refused = fingerprint_refusal(probes)
         if refused:
             metrics = {
                 "cases_total": None,
@@ -1289,9 +1331,8 @@ def main() -> int:
             }
         else:
             metrics = run_cases(PROGRAM, tests / "private", prefix, ids, cutoff_at)
-            metrics["fingerprint"] = fingerprint(
-                PROGRAM, tests / "private", prefix, ids, cutoff_at
-            )
+        if probes is not None:
+            metrics["fingerprint"] = probes
             final_cleanup(ids[0], min(cutoff_at, time.monotonic() + CLEANUP_SEC))
         metrics["notes"] = notes + metrics["notes"]
         # The reward first, in its reserved place, then renamed (no new space): nothing after it
