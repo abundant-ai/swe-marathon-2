@@ -1,0 +1,2106 @@
+{
+ "format": "qa-play/1",
+ "name": "combat.weapons/range",
+ "template": "combat.weapons",
+ "about": "A firing range on the plaza and, for the long guns, down the north-south arterial, with traffic and people set to none. The player owns all six weapons and cycles through them, raises the pistol and the rifle, then uses each weapon on people standing in front (lock-on for the guns, 8-10 m away; within reach for the fists and the bat): what each hit takes, the rate, the magazine, the reload after it runs dry and a reload by hand, a gun with nothing left; then people just beyond each weapon's range, and for the pistol, the SMG and the rifle QA's bot aiming by the camera at people just inside and just beyond it. People shot at run from the gunshots (TR-13); lock-on follows them.",
+ "rules": ["CB-1", "CB-2", "CB-3", "FT-11", "CB-7"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=21", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 900,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 1800,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 21
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-40.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "bat"
+     }
+    ],
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24
+     }
+    ],
+    [
+     "player.give",
+     {
+      "weapon": "smg",
+      "ammo": 60
+     }
+    ],
+    [
+     "player.give",
+     {
+      "weapon": "shotgun",
+      "ammo": 12
+     }
+    ],
+    [
+     "player.give",
+     {
+      "weapon": "rifle",
+      "ammo": 60
+     }
+    ]
+   ]
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "owned"
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "mark": "next_0"
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "mark": "next_1"
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "mark": "next_2"
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "mark": "next_3"
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "mark": "next_4"
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "mark": "next_5"
+  },
+  {
+   "press": {
+    "weapon_prev": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_prev"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "mark": "prev_0"
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "press": {
+    "aim": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "aim_rifle_a"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "aim_rifle_b"
+  },
+  {
+   "release": ["aim"]
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "press": {
+    "weapon_next": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["weapon_next"]
+  },
+  {
+   "run": 29
+  },
+  {
+   "press": {
+    "aim": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "aim_pistol_a"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "aim_pistol_b"
+  },
+  {
+   "release": ["aim"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-40.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-40.0, 0.15, 20.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [72, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "pistol_full"
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_fire_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 240
+  },
+  {
+   "mark": "pistol_burst_b"
+  },
+  {
+   "run": 100
+  },
+  {
+   "mark": "pistol_fire_b"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 45
+  },
+  {
+   "mark": "pistol_reload_a"
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 130
+  },
+  {
+   "mark": "pistol_reload_b"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 600
+  },
+  {
+   "mark": "dry_a"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "dry_b"
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-30.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "smg"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-30.0, 0.15, 20.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [103, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "smg_full"
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_fire_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 165
+  },
+  {
+   "mark": "smg_burst_b"
+  },
+  {
+   "run": 165
+  },
+  {
+   "mark": "smg_fire_b"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-20.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "shotgun"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.0, 0.15, 22.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [118, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "shotgun_full"
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "shotgun_fire_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 270
+  },
+  {
+   "mark": "shotgun_burst_b"
+  },
+  {
+   "run": 200
+  },
+  {
+   "mark": "shotgun_fire_b"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.0, 0.15, 5.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [131, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "shotgun_far_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 110
+  },
+  {
+   "mark": "shotgun_far_b"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-10.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "rifle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-10.0, 0.15, 20.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [143, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "rifle_full"
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_fire_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 310
+  },
+  {
+   "mark": "rifle_burst_b"
+  },
+  {
+   "run": 170
+  },
+  {
+   "mark": "rifle_fire_b"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [5.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": [5.0, 0.15, 28.8],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [158, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "fists_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 210
+  },
+  {
+   "mark": "fists_b"
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [11.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": [11.0, 0.15, 28.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "fists_far_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 150
+  },
+  {
+   "mark": "fists_far_b"
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [17.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "bat"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": [17.0, 0.15, 28.5],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [176, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "bat_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 170
+  },
+  {
+   "mark": "bat_b"
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [23.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": [23.0, 0.15, 27.7],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 10
+  },
+  {
+   "mark": "bat_far_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 150
+  },
+  {
+   "mark": "bat_far_b"
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-71.75, 0.0, 160.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24
+     }
+    ],
+    [
+     "player.give",
+     {
+      "weapon": "smg",
+      "ammo": 60
+     }
+    ],
+    [
+     "player.give",
+     {
+      "weapon": "rifle",
+      "ammo": 60
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-68.25, 0.0, 115.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-64.75, 0.0, 105.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-75.25, 0.0, 125.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-71.75, 0.0, 115.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-68.25, 0.0, 45.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-75.25, 0.0, 35.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [194, "id"]
+      },
+      {
+       "$answer": [195, "id"]
+      },
+      {
+       "$answer": [196, "id"]
+      },
+      {
+       "$answer": [197, "id"]
+      },
+      {
+       "$answer": [198, "id"]
+      },
+      {
+       "$answer": [199, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol"
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [194, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 90
+   }
+  },
+  {
+   "mark": "pistol_in_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [194, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 60,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "mark": "pistol_in_b"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [195, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 90
+   }
+  },
+  {
+   "mark": "pistol_out_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [195, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 60,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "mark": "pistol_out_b"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "smg"
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [196, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 90
+   }
+  },
+  {
+   "mark": "smg_in_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [196, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 60,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "mark": "smg_in_b"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [197, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 90
+   }
+  },
+  {
+   "mark": "smg_out_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [197, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 60,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "mark": "smg_out_b"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "rifle"
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [198, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 90
+   }
+  },
+  {
+   "mark": "rifle_in_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [198, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 60,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "mark": "rifle_in_b"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [199, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 90
+   }
+  },
+  {
+   "mark": "rifle_out_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [199, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 60,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "mark": "rifle_out_b"
+  }
+ ],
+ "expect": [
+  {
+   "id": "fists_owned",
+   "check": "state_value",
+   "args": {
+    "mark": "owned",
+    "path": "player.weapons",
+    "contains": "fists"
+   },
+   "rule": "CB-3",
+   "says": "fists are always owned: the weapons list holds them with the five given"
+  },
+  {
+   "id": "switch_next_0",
+   "check": "state_value",
+   "args": {
+    "mark": "next_0",
+    "path": "player.weapon",
+    "equals": "fists"
+   },
+   "rule": "CB-3",
+   "says": "weapon_next from rifle gives the fists (the next owned weapon in table order, wrapping round) within 0.5 s"
+  },
+  {
+   "id": "switch_next_1",
+   "check": "state_value",
+   "args": {
+    "mark": "next_1",
+    "path": "player.weapon",
+    "equals": "bat"
+   },
+   "rule": "CB-3",
+   "says": "weapon_next from fists gives the bat (the next owned weapon in table order, wrapping round) within 0.5 s"
+  },
+  {
+   "id": "switch_next_2",
+   "check": "state_value",
+   "args": {
+    "mark": "next_2",
+    "path": "player.weapon",
+    "equals": "pistol"
+   },
+   "rule": "CB-3",
+   "says": "weapon_next from bat gives the pistol (the next owned weapon in table order, wrapping round) within 0.5 s"
+  },
+  {
+   "id": "switch_next_3",
+   "check": "state_value",
+   "args": {
+    "mark": "next_3",
+    "path": "player.weapon",
+    "equals": "smg"
+   },
+   "rule": "CB-3",
+   "says": "weapon_next from pistol gives the smg (the next owned weapon in table order, wrapping round) within 0.5 s"
+  },
+  {
+   "id": "switch_next_4",
+   "check": "state_value",
+   "args": {
+    "mark": "next_4",
+    "path": "player.weapon",
+    "equals": "shotgun"
+   },
+   "rule": "CB-3",
+   "says": "weapon_next from smg gives the shotgun (the next owned weapon in table order, wrapping round) within 0.5 s"
+  },
+  {
+   "id": "switch_next_5",
+   "check": "state_value",
+   "args": {
+    "mark": "next_5",
+    "path": "player.weapon",
+    "equals": "rifle"
+   },
+   "rule": "CB-3",
+   "says": "weapon_next from shotgun gives the rifle (the next owned weapon in table order, wrapping round) within 0.5 s"
+  },
+  {
+   "id": "switch_prev",
+   "check": "state_value",
+   "args": {
+    "mark": "prev_0",
+    "path": "player.weapon",
+    "equals": "shotgun"
+   },
+   "rule": "CB-3",
+   "says": "weapon_prev from the rifle gives the shotgun within 0.5 s"
+  },
+  {
+   "id": "aim_pose_rifle",
+   "check": "aim_pose",
+   "args": {
+    "from": "aim_rifle_a",
+    "to": "aim_rifle_b",
+    "hand_m": 0.25,
+    "max_deg": 20.0,
+    "min_frames": 30
+   },
+   "rule": "FT-11",
+   "says": "holding aim with the rifle, from 0.5 s after the press: the right hand within 0.25 m of the height of RightUpperArm, and the forearm (RightLowerArm to RightHand) within 20 degrees of the direction from the hand to the aim point"
+  },
+  {
+   "id": "aim_pose_pistol",
+   "check": "aim_pose",
+   "args": {
+    "from": "aim_pistol_a",
+    "to": "aim_pistol_b",
+    "hand_m": 0.25,
+    "max_deg": 20.0,
+    "min_frames": 30
+   },
+   "rule": "FT-11",
+   "says": "holding aim with the pistol, from 0.5 s after the press: the right hand within 0.25 m of the height of RightUpperArm, and the forearm (RightLowerArm to RightHand) within 20 degrees of the direction from the hand to the aim point"
+  },
+  {
+   "id": "pistol_magazine",
+   "check": "state_value",
+   "args": {
+    "mark": "pistol_full",
+    "path": "player.ammo.magazine",
+    "equals": 12
+   },
+   "rule": "CB-1",
+   "says": "the pistol's magazine holds 12 (the table's size)"
+  },
+  {
+   "id": "pistol_hits",
+   "check": "hits",
+   "args": {
+    "from": "pistol_fire_a",
+    "to": "pistol_fire_b",
+    "targets": [
+     {
+      "step": 72
+     }
+    ],
+    "damage": 25,
+    "min_hits": 4
+   },
+   "rule": "CB-1",
+   "says": "every hit on the person 10 m ahead takes 25; health falls by each hit's amount and the person dies on the hit that takes it to 0, with no hit after"
+  },
+  {
+   "id": "pistol_rate",
+   "check": "fire_rate",
+   "args": {
+    "from": "pistol_fire_a",
+    "to": "pistol_burst_b",
+    "rate": 3.0,
+    "tol": 0.05,
+    "min_count": 3
+   },
+   "rule": "CB-1",
+   "says": "with attack held the pistol fires 3 rounds per second within 5% (rounds leaving the magazine)"
+  },
+  {
+   "id": "pistol_reload",
+   "check": "reload",
+   "args": {
+    "from": "pistol_fire_a",
+    "to": "pistol_fire_b",
+    "start": "empty",
+    "reload_s": 1.6,
+    "tol": 0.1,
+    "magazine": 12
+   },
+   "rule": "CB-1",
+   "says": "the empty magazine refills from the reserve 1.6 s later within 10%"
+  },
+  {
+   "id": "pistol_ammo",
+   "check": "ammo_flow",
+   "args": {
+    "from": "pistol_fire_a",
+    "to": "pistol_fire_b",
+    "min_rounds": 12,
+    "min_reloads": 1
+   },
+   "rule": "CB-2",
+   "says": "every change of the ammo is a round taken from the magazine or a reload from the reserve"
+  },
+  {
+   "id": "pistol_kill",
+   "check": "ragdoll",
+   "args": {
+    "from": "pistol_fire_a",
+    "to": "pistol_fire_b",
+    "id_from": {
+     "step": 72
+    },
+    "trigger": {
+     "event": "died"
+    },
+    "within_ticks": 12,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.15
+   },
+   "rule": "CB-7",
+   "says": "health 0 is death: the person shot dead has a died event and goes limp within 0.2 s (12 ticks) of it, staying limp at least 1.0 s, no bone more than 0.05 m under the ground"
+  },
+  {
+   "id": "pistol_reload_hand",
+   "check": "reload",
+   "args": {
+    "from": "pistol_reload_a",
+    "to": "pistol_reload_b",
+    "start": "mark",
+    "reload_s": 1.6,
+    "tol": 0.1,
+    "magazine": 12
+   },
+   "rule": "CB-2",
+   "says": "reload with a part-used magazine refills it from the reserve in 1.6 s within 10%"
+  },
+  {
+   "id": "dry_fire",
+   "check": "dry_fire",
+   "args": {
+    "from": "dry_a",
+    "to": "dry_b"
+   },
+   "rule": "CB-2",
+   "says": "with the magazine and the reserve empty, attack held does nothing: the ammo stays empty and nobody takes a hit"
+  },
+  {
+   "id": "smg_magazine",
+   "check": "state_value",
+   "args": {
+    "mark": "smg_full",
+    "path": "player.ammo.magazine",
+    "equals": 30
+   },
+   "rule": "CB-1",
+   "says": "the smg's magazine holds 30 (the table's size)"
+  },
+  {
+   "id": "smg_hits",
+   "check": "hits",
+   "args": {
+    "from": "smg_fire_a",
+    "to": "smg_fire_b",
+    "targets": [
+     {
+      "step": 103
+     }
+    ],
+    "damage": 14,
+    "min_hits": 4
+   },
+   "rule": "CB-1",
+   "says": "every hit on the person 10 m ahead takes 14; health falls by each hit's amount and the person dies on the hit that takes it to 0, with no hit after"
+  },
+  {
+   "id": "smg_rate",
+   "check": "fire_rate",
+   "args": {
+    "from": "smg_fire_a",
+    "to": "smg_burst_b",
+    "rate": 12.0,
+    "tol": 0.05,
+    "min_count": 3
+   },
+   "rule": "CB-1",
+   "says": "with attack held the smg fires 12 rounds per second within 5% (rounds leaving the magazine)"
+  },
+  {
+   "id": "smg_reload",
+   "check": "reload",
+   "args": {
+    "from": "smg_fire_a",
+    "to": "smg_fire_b",
+    "start": "empty",
+    "reload_s": 2.2,
+    "tol": 0.1,
+    "magazine": 30
+   },
+   "rule": "CB-1",
+   "says": "the empty magazine refills from the reserve 2.2 s later within 10%"
+  },
+  {
+   "id": "smg_ammo",
+   "check": "ammo_flow",
+   "args": {
+    "from": "smg_fire_a",
+    "to": "smg_fire_b",
+    "min_rounds": 30,
+    "min_reloads": 1
+   },
+   "rule": "CB-2",
+   "says": "every change of the ammo is a round taken from the magazine or a reload from the reserve"
+  },
+  {
+   "id": "shotgun_magazine",
+   "check": "state_value",
+   "args": {
+    "mark": "shotgun_full",
+    "path": "player.ammo.magazine",
+    "equals": 6
+   },
+   "rule": "CB-1",
+   "says": "the shotgun's magazine holds 6 (the table's size)"
+  },
+  {
+   "id": "shotgun_hits",
+   "check": "hits",
+   "args": {
+    "from": "shotgun_fire_a",
+    "to": "shotgun_fire_b",
+    "targets": [
+     {
+      "step": 118
+     }
+    ],
+    "damage": 10,
+    "min_hits": 4,
+    "per_round": 8
+   },
+   "rule": "CB-1",
+   "says": "every pellet that hits the person 8 m ahead takes 10 (eight per round at most); health falls by each hit's amount and the person dies on the hit that takes it to 0, with no hit after"
+  },
+  {
+   "id": "shotgun_rate",
+   "check": "fire_rate",
+   "args": {
+    "from": "shotgun_fire_a",
+    "to": "shotgun_burst_b",
+    "rate": 1.2,
+    "tol": 0.05,
+    "min_count": 3
+   },
+   "rule": "CB-1",
+   "says": "with attack held the shotgun fires 1.2 rounds per second within 5% (rounds leaving the magazine)"
+  },
+  {
+   "id": "shotgun_reload",
+   "check": "reload",
+   "args": {
+    "from": "shotgun_fire_a",
+    "to": "shotgun_fire_b",
+    "start": "empty",
+    "reload_s": 3.0,
+    "tol": 0.1,
+    "magazine": 6
+   },
+   "rule": "CB-1",
+   "says": "the empty magazine refills from the reserve 3 s later within 10%"
+  },
+  {
+   "id": "shotgun_ammo",
+   "check": "ammo_flow",
+   "args": {
+    "from": "shotgun_fire_a",
+    "to": "shotgun_fire_b",
+    "min_rounds": 6,
+    "min_reloads": 1
+   },
+   "rule": "CB-2",
+   "says": "every change of the ammo is a round taken from the magazine or a reload from the reserve"
+  },
+  {
+   "id": "shotgun_range",
+   "check": "untouched",
+   "args": {
+    "from": "shotgun_far_a",
+    "to": "shotgun_far_b",
+    "targets": [
+     {
+      "step": 131
+     }
+    ],
+    "min_rounds": 2
+   },
+   "rule": "CB-1",
+   "says": "the person 25 m ahead, beyond the shotgun's 20 m, takes no hit from two rounds fired at it"
+  },
+  {
+   "id": "rifle_magazine",
+   "check": "state_value",
+   "args": {
+    "mark": "rifle_full",
+    "path": "player.ammo.magazine",
+    "equals": 30
+   },
+   "rule": "CB-1",
+   "says": "the rifle's magazine holds 30 (the table's size)"
+  },
+  {
+   "id": "rifle_hits",
+   "check": "hits",
+   "args": {
+    "from": "rifle_fire_a",
+    "to": "rifle_fire_b",
+    "targets": [
+     {
+      "step": 143
+     }
+    ],
+    "damage": 32,
+    "min_hits": 4
+   },
+   "rule": "CB-1",
+   "says": "every hit on the person 10 m ahead takes 32; health falls by each hit's amount and the person dies on the hit that takes it to 0, with no hit after"
+  },
+  {
+   "id": "rifle_rate",
+   "check": "fire_rate",
+   "args": {
+    "from": "rifle_fire_a",
+    "to": "rifle_burst_b",
+    "rate": 6.0,
+    "tol": 0.05,
+    "min_count": 3
+   },
+   "rule": "CB-1",
+   "says": "with attack held the rifle fires 6 rounds per second within 5% (rounds leaving the magazine)"
+  },
+  {
+   "id": "rifle_reload",
+   "check": "reload",
+   "args": {
+    "from": "rifle_fire_a",
+    "to": "rifle_fire_b",
+    "start": "empty",
+    "reload_s": 2.6,
+    "tol": 0.1,
+    "magazine": 30
+   },
+   "rule": "CB-1",
+   "says": "the empty magazine refills from the reserve 2.6 s later within 10%"
+  },
+  {
+   "id": "rifle_ammo",
+   "check": "ammo_flow",
+   "args": {
+    "from": "rifle_fire_a",
+    "to": "rifle_fire_b",
+    "min_rounds": 30,
+    "min_reloads": 1
+   },
+   "rule": "CB-2",
+   "says": "every change of the ammo is a round taken from the magazine or a reload from the reserve"
+  },
+  {
+   "id": "fists_hits",
+   "check": "hits",
+   "args": {
+    "from": "fists_a",
+    "to": "fists_b",
+    "targets": [
+     {
+      "step": 158
+     }
+    ],
+    "damage": 10,
+    "min_hits": 4
+   },
+   "rule": "CB-1",
+   "says": "every blow of the fists on the person 1.2 m ahead takes 10"
+  },
+  {
+   "id": "fists_rate",
+   "check": "fire_rate",
+   "args": {
+    "from": "fists_a",
+    "to": "fists_b",
+    "blows": [
+     {
+      "step": 158
+     }
+    ],
+    "rate": 2.0,
+    "tol": 0.05,
+    "min_count": 4
+   },
+   "rule": "CB-1",
+   "says": "with attack held the fists lands 2 blows per second within 5%"
+  },
+  {
+   "id": "fists_range",
+   "check": "untouched",
+   "args": {
+    "from": "fists_far_a",
+    "to": "fists_far_b",
+    "targets": [
+     {
+      "step": 167
+     }
+    ],
+    "min_rounds": 0
+   },
+   "rule": "CB-1",
+   "says": "the person 2 m ahead, beyond the fists's 1.5 m, takes no blow in 2.5 s of attack held"
+  },
+  {
+   "id": "bat_hits",
+   "check": "hits",
+   "args": {
+    "from": "bat_a",
+    "to": "bat_b",
+    "targets": [
+     {
+      "step": 176
+     }
+    ],
+    "damage": 25,
+    "min_hits": 4
+   },
+   "rule": "CB-1",
+   "says": "every blow of the bat on the person 1.5 m ahead takes 25"
+  },
+  {
+   "id": "bat_rate",
+   "check": "fire_rate",
+   "args": {
+    "from": "bat_a",
+    "to": "bat_b",
+    "blows": [
+     {
+      "step": 176
+     }
+    ],
+    "rate": 1.25,
+    "tol": 0.05,
+    "min_count": 4
+   },
+   "rule": "CB-1",
+   "says": "with attack held the bat lands 1.25 blows per second within 5%"
+  },
+  {
+   "id": "bat_range",
+   "check": "untouched",
+   "args": {
+    "from": "bat_far_a",
+    "to": "bat_far_b",
+    "targets": [
+     {
+      "step": 185
+     }
+    ],
+    "min_rounds": 0
+   },
+   "rule": "CB-1",
+   "says": "the person 2.3 m ahead, beyond the bat's 1.8 m, takes no blow in 2.5 s of attack held"
+  },
+  {
+   "id": "pistol_range_inside",
+   "check": "hits",
+   "args": {
+    "from": "pistol_in_a",
+    "to": "pistol_in_b",
+    "targets": [
+     {
+      "step": 194
+     }
+    ],
+    "damage": 25,
+    "min_hits": 1
+   },
+   "rule": "CB-1",
+   "says": "aimed by the camera at the person 45.1 m away, inside the pistol's 50 m, the rounds hit",
+   "kind": "pre"
+  },
+  {
+   "id": "pistol_range",
+   "check": "untouched",
+   "args": {
+    "from": "pistol_out_a",
+    "to": "pistol_out_b",
+    "targets": [
+     {
+      "step": 195
+     }
+    ],
+    "min_rounds": 2
+   },
+   "rule": "CB-1",
+   "says": "aimed the same way at the person 55.4 m away, beyond the pistol's 50 m, the rounds do no damage"
+  },
+  {
+   "id": "smg_range_inside",
+   "check": "hits",
+   "args": {
+    "from": "smg_in_a",
+    "to": "smg_in_b",
+    "targets": [
+     {
+      "step": 196
+     }
+    ],
+    "damage": 14,
+    "min_hits": 1
+   },
+   "rule": "CB-1",
+   "says": "aimed by the camera at the person 35.2 m away, inside the smg's 40 m, the rounds hit",
+   "kind": "pre"
+  },
+  {
+   "id": "smg_range",
+   "check": "untouched",
+   "args": {
+    "from": "smg_out_a",
+    "to": "smg_out_b",
+    "targets": [
+     {
+      "step": 197
+     }
+    ],
+    "min_rounds": 2
+   },
+   "rule": "CB-1",
+   "says": "aimed the same way at the person 45 m away, beyond the smg's 40 m, the rounds do no damage"
+  },
+  {
+   "id": "rifle_range_inside",
+   "check": "hits",
+   "args": {
+    "from": "rifle_in_a",
+    "to": "rifle_in_b",
+    "targets": [
+     {
+      "step": 198
+     }
+    ],
+    "damage": 32,
+    "min_hits": 1
+   },
+   "rule": "CB-1",
+   "says": "aimed by the camera at the person 115.1 m away, inside the rifle's 120 m, the rounds hit",
+   "kind": "pre"
+  },
+  {
+   "id": "rifle_range",
+   "check": "untouched",
+   "args": {
+    "from": "rifle_out_a",
+    "to": "rifle_out_b",
+    "targets": [
+     {
+      "step": 199
+     }
+    ],
+    "min_rounds": 2
+   },
+   "rule": "CB-1",
+   "says": "aimed the same way at the person 125 m away, beyond the rifle's 120 m, the rounds do no damage"
+  }
+ ],
+ "tags": []
+}

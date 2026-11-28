@@ -1,0 +1,2646 @@
+{
+ "format": "qa-play/1",
+ "name": "vehicle.handling/service",
+ "template": "vehicle.handling",
+ "about": "Proving runs for each model in turn, the player driving alone, on Downtown's north-south arterial (level dry asphalt) and in the parking lot north-east of the plaza: 0-60 km/h at full throttle; a full stop from 60 km/h, dry and then in rain; the handbrake alone from 40 km/h; the turning circle at 8 km/h with full lock. Each model's body is a physics body on the vehicles layer with its listed mass. Traffic and people are set to none for the runs, and the wet stop uses the dry stop's lane. (Top speed needs a straight of at least 1.5 km, which Downtown does not have.)",
+ "rules": ["VH-1", "VH-2", "IN-2", "AC-6", "VH-9"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=13", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 900,
+  "boot_s": 60,
+  "step_s": 60,
+  "cpu_s": 1200,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "taxi",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [3, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "taxi_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "taxi_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "taxi_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [3, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "taxi_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [3, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "taxi_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "taxi",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [28, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "taxi_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [28, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "taxi_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "taxi",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [42, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "taxi_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "taxi_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "taxi",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [57, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "taxi_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [57, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "taxi_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "police",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [67, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "police_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "police_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "police_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [67, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "police_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [67, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "police_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "police",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [92, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "police_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [92, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "police_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "police",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [106, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "police_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "police_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "police",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [121, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "police_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [121, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "police_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "ambulance",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [131, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "ambulance_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "ambulance_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "ambulance_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [131, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "ambulance_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [131, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "ambulance_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "ambulance",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [156, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "ambulance_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [156, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "ambulance_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "ambulance",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [170, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "ambulance_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "ambulance_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "ambulance",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [185, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "ambulance_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [185, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "ambulance_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "tactical_van",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [195, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "tactical_van_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "tactical_van_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "tactical_van_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [195, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "tactical_van_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [195, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "tactical_van_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "tactical_van",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [220, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "tactical_van_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [220, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "tactical_van_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "tactical_van",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [234, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "tactical_van_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "tactical_van_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "tactical_van",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [249, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "tactical_van_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [249, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "tactical_van_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "motorbike",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [259, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "motorbike_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "motorbike_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "motorbike_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [259, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "motorbike_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [259, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "motorbike_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 13
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "motorbike",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [284, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "motorbike_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [284, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "motorbike_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "motorbike",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [298, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "motorbike_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [298, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "motorbike_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [298, "id"]
+     }
+    },
+    "kmh": 15.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    },
+    "keep": true
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "motorbike_lean_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [298, "id"]
+     }
+    },
+    "kmh": 15.0,
+    "ticks": 300,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "motorbike_lean_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  }
+ ],
+ "expect": [
+  {
+   "id": "taxi_body",
+   "check": "body",
+   "args": {
+    "step": 4,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 1350.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the taxi model's root is a physics body on the vehicles layer with a mass of 1,350 kg within 10%"
+  },
+  {
+   "id": "taxi_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "taxi_walk_a",
+    "to": "taxi_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the taxi model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "taxi_accel",
+   "check": "accel",
+   "args": {
+    "from": "taxi_accel_a",
+    "to": "taxi_brake_a",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 4.5,
+    "max_s": 6.5
+   },
+   "rule": "VH-1",
+   "says": "the taxi model reaches 60 km/h from rest in 4.5-6.5 s"
+  },
+  {
+   "id": "taxi_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "taxi_brake_a",
+    "to": "taxi_brake_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 13.5,
+    "max_m": 19.5
+   },
+   "rule": "VH-1",
+   "says": "the taxi model stops from 60 km/h within 13.5-19.5 m on dry asphalt"
+  },
+  {
+   "id": "taxi_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "taxi_wet_a",
+    "to": "taxi_wet_b",
+    "id_from": {
+     "step": 28,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "taxi_brake_a",
+     "to": "taxi_brake_b",
+     "id_from": {
+      "step": 3,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the taxi model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "taxi_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "taxi_handbrake_a",
+    "to": "taxi_handbrake_b",
+    "id_from": {
+     "step": 42,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the taxi model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "taxi_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "taxi_circle_a",
+    "to": "taxi_circle_b",
+    "id_from": {
+     "step": 57,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 10.0,
+    "max_m": 13.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the taxi model's position traces a circle 10.0-13.0 m across"
+  },
+  {
+   "id": "police_body",
+   "check": "body",
+   "args": {
+    "step": 68,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 1500.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the police model's root is a physics body on the vehicles layer with a mass of 1,500 kg within 10%"
+  },
+  {
+   "id": "police_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "police_walk_a",
+    "to": "police_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the police model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "police_accel",
+   "check": "accel",
+   "args": {
+    "from": "police_accel_a",
+    "to": "police_brake_a",
+    "id_from": {
+     "step": 67,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 3.8,
+    "max_s": 5.6
+   },
+   "rule": "VH-1",
+   "says": "the police model reaches 60 km/h from rest in 3.8-5.6 s"
+  },
+  {
+   "id": "police_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "police_brake_a",
+    "to": "police_brake_b",
+    "id_from": {
+     "step": 67,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 13.0,
+    "max_m": 18.5
+   },
+   "rule": "VH-1",
+   "says": "the police model stops from 60 km/h within 13.0-18.5 m on dry asphalt"
+  },
+  {
+   "id": "police_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "police_wet_a",
+    "to": "police_wet_b",
+    "id_from": {
+     "step": 92,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "police_brake_a",
+     "to": "police_brake_b",
+     "id_from": {
+      "step": 67,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the police model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "police_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "police_handbrake_a",
+    "to": "police_handbrake_b",
+    "id_from": {
+     "step": 106,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the police model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "police_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "police_circle_a",
+    "to": "police_circle_b",
+    "id_from": {
+     "step": 121,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 10.5,
+    "max_m": 13.5
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the police model's position traces a circle 10.5-13.5 m across"
+  },
+  {
+   "id": "ambulance_body",
+   "check": "body",
+   "args": {
+    "step": 132,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 2800.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the ambulance model's root is a physics body on the vehicles layer with a mass of 2,800 kg within 10%"
+  },
+  {
+   "id": "ambulance_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "ambulance_walk_a",
+    "to": "ambulance_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the ambulance model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "ambulance_accel",
+   "check": "accel",
+   "args": {
+    "from": "ambulance_accel_a",
+    "to": "ambulance_brake_a",
+    "id_from": {
+     "step": 131,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 6.5,
+    "max_s": 9.5
+   },
+   "rule": "VH-1",
+   "says": "the ambulance model reaches 60 km/h from rest in 6.5-9.5 s"
+  },
+  {
+   "id": "ambulance_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "ambulance_brake_a",
+    "to": "ambulance_brake_b",
+    "id_from": {
+     "step": 131,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 17.0,
+    "max_m": 24.0
+   },
+   "rule": "VH-1",
+   "says": "the ambulance model stops from 60 km/h within 17.0-24.0 m on dry asphalt"
+  },
+  {
+   "id": "ambulance_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "ambulance_wet_a",
+    "to": "ambulance_wet_b",
+    "id_from": {
+     "step": 156,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "ambulance_brake_a",
+     "to": "ambulance_brake_b",
+     "id_from": {
+      "step": 131,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the ambulance model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "ambulance_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "ambulance_handbrake_a",
+    "to": "ambulance_handbrake_b",
+    "id_from": {
+     "step": 170,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the ambulance model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "ambulance_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "ambulance_circle_a",
+    "to": "ambulance_circle_b",
+    "id_from": {
+     "step": 185,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 12.5,
+    "max_m": 16.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the ambulance model's position traces a circle 12.5-16.0 m across"
+  },
+  {
+   "id": "tactical_van_body",
+   "check": "body",
+   "args": {
+    "step": 196,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 3000.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the tactical_van model's root is a physics body on the vehicles layer with a mass of 3,000 kg within 10%"
+  },
+  {
+   "id": "tactical_van_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "tactical_van_walk_a",
+    "to": "tactical_van_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the tactical_van model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "tactical_van_accel",
+   "check": "accel",
+   "args": {
+    "from": "tactical_van_accel_a",
+    "to": "tactical_van_brake_a",
+    "id_from": {
+     "step": 195,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 7.0,
+    "max_s": 10.0
+   },
+   "rule": "VH-1",
+   "says": "the tactical_van model reaches 60 km/h from rest in 7.0-10.0 s"
+  },
+  {
+   "id": "tactical_van_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "tactical_van_brake_a",
+    "to": "tactical_van_brake_b",
+    "id_from": {
+     "step": 195,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 17.0,
+    "max_m": 24.0
+   },
+   "rule": "VH-1",
+   "says": "the tactical_van model stops from 60 km/h within 17.0-24.0 m on dry asphalt"
+  },
+  {
+   "id": "tactical_van_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "tactical_van_wet_a",
+    "to": "tactical_van_wet_b",
+    "id_from": {
+     "step": 220,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "tactical_van_brake_a",
+     "to": "tactical_van_brake_b",
+     "id_from": {
+      "step": 195,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the tactical_van model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "tactical_van_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "tactical_van_handbrake_a",
+    "to": "tactical_van_handbrake_b",
+    "id_from": {
+     "step": 234,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the tactical_van model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "tactical_van_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "tactical_van_circle_a",
+    "to": "tactical_van_circle_b",
+    "id_from": {
+     "step": 249,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 12.5,
+    "max_m": 16.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the tactical_van model's position traces a circle 12.5-16.0 m across"
+  },
+  {
+   "id": "motorbike_body",
+   "check": "body",
+   "args": {
+    "step": 260,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 220.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the motorbike model's root is a physics body on the vehicles layer with a mass of 220 kg within 10%"
+  },
+  {
+   "id": "motorbike_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "motorbike_walk_a",
+    "to": "motorbike_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the motorbike model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "motorbike_accel",
+   "check": "accel",
+   "args": {
+    "from": "motorbike_accel_a",
+    "to": "motorbike_brake_a",
+    "id_from": {
+     "step": 259,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 2.5,
+    "max_s": 4.0
+   },
+   "rule": "VH-1",
+   "says": "the motorbike model reaches 60 km/h from rest in 2.5-4.0 s"
+  },
+  {
+   "id": "motorbike_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "motorbike_brake_a",
+    "to": "motorbike_brake_b",
+    "id_from": {
+     "step": 259,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 12.0,
+    "max_m": 17.0
+   },
+   "rule": "VH-1",
+   "says": "the motorbike model stops from 60 km/h within 12.0-17.0 m on dry asphalt"
+  },
+  {
+   "id": "motorbike_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "motorbike_wet_a",
+    "to": "motorbike_wet_b",
+    "id_from": {
+     "step": 284,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "motorbike_brake_a",
+     "to": "motorbike_brake_b",
+     "id_from": {
+      "step": 259,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the motorbike model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "motorbike_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "motorbike_circle_a",
+    "to": "motorbike_circle_b",
+    "id_from": {
+     "step": 298,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 6.0,
+    "max_m": 9.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the motorbike model's position traces a circle 6.0-9.0 m across"
+  },
+  {
+   "id": "motorbike_lean",
+   "check": "lean",
+   "args": {
+    "from": "motorbike_lean_a",
+    "to": "motorbike_lean_b",
+    "id_from": {
+     "step": 298,
+     "index": 0
+    },
+    "min_lat": 2.0,
+    "min_deg": 10.0,
+    "share": 0.9,
+    "min_samples": 30
+   },
+   "rule": "VH-9",
+   "says": "cornering at 2 m/s^2 or more, the motorbike leans at least 10 degrees"
+  }
+ ],
+ "tags": []
+}

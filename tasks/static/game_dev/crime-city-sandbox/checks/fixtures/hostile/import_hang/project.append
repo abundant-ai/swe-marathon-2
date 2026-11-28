@@ -1,0 +1,4 @@
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/boom/plugin.cfg")

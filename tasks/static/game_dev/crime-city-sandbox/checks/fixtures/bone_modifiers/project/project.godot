@@ -1,0 +1,24 @@
+; Two rigged people whose skeleton modifiers move their bones (main.gd), for the QA kit's
+; bone reads: checks/test_godot_bones.py plays fixtures/bone_modifiers/bones.json on it.
+config_version=5
+
+[application]
+
+config/name="Bone Modifiers"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7")
+
+[autoload]
+
+DevConsole="*res://dev_console.gd"
+
+[physics]
+
+common/physics_ticks_per_second=60
+common/physics_jitter_fix=0.0
+3d/run_on_separate_thread=false
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

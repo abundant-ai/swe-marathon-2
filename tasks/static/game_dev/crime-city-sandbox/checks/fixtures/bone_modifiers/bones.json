@@ -1,0 +1,23 @@
+{
+  "format": "qa-play/1",
+  "name": "bones.shown/modifiers",
+  "template": "bones.shown",
+  "rules": [],
+  "role": "solo",
+  "args": [],
+  "mode": "lockstep",
+  "runs": [{"pace_ms": 0}],
+  "limits": {"wall_s": 120, "cpu_s": 120, "memory_mb": 1536, "boot_s": 60, "step_s": 30},
+  "steps": [
+    {"query": [{"id": "npc_eyes", "type": "los", "a": 2, "b": 1}]},
+    {"observe": {"census": true, "state": true, "every": 1, "bones": {
+      "ids": [1, 2], "names": ["LeftLowerArm", "LeftHand", "Head", "RightHand", "LeftToes"]}}},
+    {"run": 12},
+    {"query": [{"id": "player_eyes", "type": "los", "a": 1, "b": 2}]},
+    {"observe": {"census": true, "state": true, "every": 6, "bones": {
+      "ids": [1, 2], "names": ["LeftLowerArm", "LeftHand", "Head", "RightHand", "LeftToes"]}}},
+    {"run": 30}
+  ],
+  "expect": [],
+  "tags": []
+}

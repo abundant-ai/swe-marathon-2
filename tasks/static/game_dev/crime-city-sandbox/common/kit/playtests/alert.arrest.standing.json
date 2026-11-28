@@ -1,0 +1,236 @@
+{
+ "format": "qa-play/1",
+ "name": "alert.arrest/standing",
+ "template": "alert.arrest",
+ "about": "On the plaza with traffic and people set to none. The player, holding a pistol and $1,200, punches a tourist with a police officer watching from 3.0 m (level 1) and stands still for 6 s; then the player is put 1.0 m from the officer and stands still.",
+ "rules": ["AL-9", "CB-10"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=46", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 300,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"],
+     "kinds": ["player", "npc", "vehicle", "signal", "prop"],
+     "view": true
+    },
+    "state": true,
+    "camera": true,
+    "every": 1
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 46
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24,
+      "money": 700
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "police_officer",
+      "at": [0.0, 0.15, 4.0],
+      "heading": 270,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-3.0, 0.15, 2.9],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 360
+  },
+  {
+   "mark": "kept_off"
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-1.0, 0.15, 4.0],
+      "heading": 90
+     }
+    ]
+   ]
+  },
+  {
+   "run": 2
+  },
+  {
+   "mark": "beside"
+  },
+  {
+   "run": 900
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "no_arrest_at_3m",
+   "check": "arrest",
+   "args": {
+    "from": "start",
+    "to": "kept_off",
+    "officer": {
+     "step": 6
+    },
+    "expect": false
+   },
+   "rule": "AL-9",
+   "says": "with the officer 3.0 m off the player is not arrested"
+  },
+  {
+   "id": "arrested",
+   "check": "arrest",
+   "args": {
+    "from": "beside",
+    "to": "end",
+    "officer": {
+     "step": 6
+    },
+    "near_m": 2.0,
+    "min_s": 3.0,
+    "max_s": 3.5
+   },
+   "rule": "AL-9",
+   "says": "at level 1, standing still with the officer 1.0 m away, the player is arrested 3.0 s (to 3.5 s) after the officer stood within 2.0 m"
+  },
+  {
+   "id": "came_back",
+   "check": "came_back",
+   "args": {
+    "from": "beside",
+    "to": "end",
+    "after": "arrested",
+    "poi": "police_station_downtown",
+    "respawn": [-34.64, 0.15, 61.5],
+    "within_s": 10.0,
+    "fine": 500,
+    "weapons": ["fists"]
+   },
+   "rule": "AL-9",
+   "says": "within 10 s of the arrest the player comes back (a teleport and a respawned event) within 2 m of the police station's respawn point, at level 0, with only fists and $500 less"
+  },
+  {
+   "id": "no_force",
+   "check": "police_force",
+   "args": {
+    "from": "start",
+    "to": "end"
+   },
+   "rule": "CB-10",
+   "says": "at level 1 the officer arrests: it never hits the player nor turns hostile"
+  },
+  {
+   "id": "honest",
+   "check": "alert_honest",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "police": [
+     {
+      "step": 6
+     }
+    ]
+   },
+   "rule": "AL-4",
+   "says": "every rise of the level follows a crime a police officer saw at most 1.0 s before, or one others saw 10-11 s before, to the level AL-4 gives; it drops only to 0, on an escape, an arrest or a death"
+  }
+ ],
+ "tags": []
+}

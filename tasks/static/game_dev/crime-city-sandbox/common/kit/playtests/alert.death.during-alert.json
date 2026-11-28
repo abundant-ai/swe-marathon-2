@@ -1,0 +1,191 @@
+{
+ "format": "qa-play/1",
+ "name": "alert.death/during-alert",
+ "template": "alert.death",
+ "about": "On the plaza with traffic and people set to none. The player, holding a pistol, 30 armour and $180, punches a tourist with a police officer watching from 25 m (level 1); two seconds later the player's health is set to 0.",
+ "rules": ["AL-10"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=47", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 300,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"],
+     "kinds": ["player", "npc", "vehicle", "signal", "prop"],
+     "view": true
+    },
+    "state": true,
+    "camera": true,
+    "every": 2
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 47
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24,
+      "armour": 30
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "police_officer",
+      "at": [-3.0, 0.15, -21.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-3.0, 0.15, 2.9],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "before"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 900
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "came_back",
+   "check": "came_back",
+   "args": {
+    "from": "before",
+    "to": "end",
+    "after": "died",
+    "poi": "hospital_downtown",
+    "respawn": [94.37, 0.15, -172.25],
+    "within_s": 10.0,
+    "fine": 250,
+    "health": 100,
+    "armour": 0,
+    "weapons": ["fists", "pistol"]
+   },
+   "rule": "AL-10",
+   "says": "within 10 s of dying the player comes back (a teleport and a respawned event) within 2 m of the hospital's respawn point with 100 health, 0 armour, level 0, $250 less, keeping the pistol"
+  },
+  {
+   "id": "honest",
+   "check": "alert_honest",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "police": [
+     {
+      "step": 6
+     }
+    ]
+   },
+   "rule": "AL-4",
+   "says": "every rise of the level follows a crime a police officer saw at most 1.0 s before, or one others saw 10-11 s before, to the level AL-4 gives; it drops only to 0, on an escape, an arrest or a death"
+  }
+ ],
+ "tags": []
+}

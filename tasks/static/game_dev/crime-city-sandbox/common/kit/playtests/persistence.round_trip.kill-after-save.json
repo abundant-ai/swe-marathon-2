@@ -1,0 +1,155 @@
+{
+ "format": "qa-play/1",
+ "name": "persistence.round_trip/kill-after-save",
+ "template": "persistence.round_trip",
+ "about": "Once saved fires, killing the process leaves the slot loadable with what was saved.",
+ "rules": ["SV-1", "SV-3", "SV-4", "SV-6"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=4", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 4
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 300
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "bat"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "save",
+     {
+      "slot": 3
+     }
+    ]
+   ]
+  },
+  {
+   "wait_for": {
+    "event": "saved",
+    "max_ticks": 120
+   }
+  },
+  {
+   "restart": {}
+  },
+  {
+   "dev": [
+    [
+     "load",
+     {
+      "slot": 3
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "loaded"
+  }
+ ],
+ "expect": [
+  {
+   "id": "saved",
+   "check": "event_seen",
+   "args": {
+    "name": "saved",
+    "min_count": 1
+   },
+   "rule": "SV-1",
+   "says": "the save fires saved",
+   "kind": "pre"
+  },
+  {
+   "id": "loads",
+   "check": "dev_result",
+   "args": {
+    "step": 7,
+    "equals": {
+     "ok": true
+    }
+   },
+   "rule": "SV-4",
+   "says": "slot 3 loads after the kill"
+  },
+  {
+   "id": "money_kept",
+   "check": "state_value",
+   "args": {
+    "mark": "loaded",
+    "path": "player.money",
+    "equals": 800
+   },
+   "rule": "SV-3",
+   "says": "the money saved comes back ($800)"
+  },
+  {
+   "id": "weapon_kept",
+   "check": "state_value",
+   "args": {
+    "mark": "loaded",
+    "path": "player.weapons",
+    "contains": "bat"
+   },
+   "rule": "SV-3",
+   "says": "and the weapons saved"
+  },
+  {
+   "id": "loaded_event",
+   "check": "event_seen",
+   "args": {
+    "name": "loaded",
+    "min_count": 1
+   },
+   "rule": "AC-13",
+   "says": "loading fires loaded"
+  }
+ ],
+ "tags": []
+}

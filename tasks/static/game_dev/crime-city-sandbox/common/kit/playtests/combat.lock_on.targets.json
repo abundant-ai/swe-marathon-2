@@ -1,0 +1,2972 @@
+{
+ "format": "qa-play/1",
+ "name": "combat.lock_on/targets",
+ "template": "combat.lock_on",
+ "about": "On the plaza with traffic and people set to none. Two people stand ahead, 12 and 18 m off: lock_target takes the nearer. A hostile person (unarmed) comes at the player from 22 m: lock_target takes it over the nearer one, the camera keeps it in the middle of the view and the aim point on its Chest while it runs in, and the pistol stops it. Then single rounds with lock-on at people standing 15 m away, one each: ten from the pistol, ten from the rifle, ten from the SMG, after a world reset. People near a gunshot run from it (TR-13).",
+ "rules": ["CM-5", "CB-4"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=22", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 600,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 1200,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 22
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-40.0, 0.15, 10.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": [-38.0, 0.15, -2.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "shopper",
+      "at": [-44.0, 0.15, -8.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [5, "id"]
+      },
+      {
+       "$answer": [6, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 20
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "near_a"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "near_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "shopper",
+      "at": [-30.0, 0.15, -10.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [5, "id"]
+      },
+      {
+       "$answer": [6, "id"]
+      },
+      {
+       "$answer": [15, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "hostile_a"
+  },
+  {
+   "run": 40
+  },
+  {
+   "mark": "hostile_b"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 90
+  },
+  {
+   "mark": "hostile_c"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 22
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 30
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-35.0, 0.15, -35.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [35, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_0_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_0_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.73, 0.15, -15.36],
+      "heading": 288,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 108
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [48, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_1_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_1_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-43.82, 0.15, -7.86],
+      "heading": 36,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 216
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [61, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_2_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_2_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-43.82, 0.15, -32.14],
+      "heading": 144,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 324
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [74, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_3_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_3_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.73, 0.15, -24.64],
+      "heading": 252,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 72
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [87, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_4_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_4_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-35.0, 0.15, -5.0],
+      "heading": 0,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 180
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [100, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_5_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_5_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-49.27, 0.15, -24.64],
+      "heading": 108,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 288
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [113, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_6_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_6_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-26.18, 0.15, -32.14],
+      "heading": 216,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 36
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [126, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_7_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_7_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-26.18, 0.15, -7.86],
+      "heading": 324,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 144
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [139, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_8_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_8_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-49.27, 0.15, -15.36],
+      "heading": 72,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 252
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [152, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pistol_9_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "pistol_9_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "rifle",
+      "ammo": 30
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-35.0, 0.15, -35.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [170, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_0_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_0_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.73, 0.15, -15.36],
+      "heading": 288,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 108
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [183, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_1_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_1_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-43.82, 0.15, -7.86],
+      "heading": 36,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 216
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [196, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_2_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_2_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-43.82, 0.15, -32.14],
+      "heading": 144,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 324
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [209, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_3_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_3_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.73, 0.15, -24.64],
+      "heading": 252,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 72
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [222, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_4_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_4_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-35.0, 0.15, -5.0],
+      "heading": 0,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 180
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [235, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_5_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_5_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-49.27, 0.15, -24.64],
+      "heading": 108,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 288
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [248, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_6_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_6_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-26.18, 0.15, -32.14],
+      "heading": 216,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 36
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [261, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_7_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_7_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-26.18, 0.15, -7.86],
+      "heading": 324,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 144
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [274, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_8_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_8_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-49.27, 0.15, -15.36],
+      "heading": 72,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 252
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [287, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "rifle_9_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "rifle_9_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "smg",
+      "ammo": 30
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-35.0, 0.15, -35.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [305, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_0_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_0_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.73, 0.15, -15.36],
+      "heading": 288,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 108
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [318, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_1_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_1_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-43.82, 0.15, -7.86],
+      "heading": 36,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 216
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [331, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_2_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_2_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-43.82, 0.15, -32.14],
+      "heading": 144,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 324
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [344, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_3_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_3_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-20.73, 0.15, -24.64],
+      "heading": 252,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 72
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [357, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_4_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_4_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-35.0, 0.15, -5.0],
+      "heading": 0,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 180
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [370, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_5_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_5_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-49.27, 0.15, -24.64],
+      "heading": 108,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 288
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [383, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_6_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_6_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-26.18, 0.15, -32.14],
+      "heading": 216,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 36
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [396, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_7_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_7_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-26.18, 0.15, -7.86],
+      "heading": 324,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 144
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [409, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_8_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_8_b"
+  },
+  {
+   "release": ["lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-49.27, 0.15, -15.36],
+      "heading": 72,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-35.0, 0.15, -20.0],
+      "heading": 252
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [422, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "smg_9_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "smg_9_b"
+  },
+  {
+   "release": ["lock_target"]
+  }
+ ],
+ "expect": [
+  {
+   "id": "lock_nearest",
+   "check": "lock_on",
+   "args": {
+    "from": "near_a",
+    "to": "near_b",
+    "target": {
+     "step": 5
+    },
+    "aim_m": 0.3,
+    "middle": 0.3,
+    "aspect": 1.7777777777777777,
+    "min_frames": 30
+   },
+   "rule": "CM-5",
+   "says": "lock_target takes the nearer of two people ahead (12.2 m, 9 degrees right; the other 18.4 m, 13 degrees left): from 0.5 s after the press its Chest bone stays in the middle 30% of the view and the aim point within 0.3 m of it"
+  },
+  {
+   "id": "lock_hostile",
+   "check": "lock_on",
+   "args": {
+    "from": "hostile_a",
+    "to": "hostile_b",
+    "target": {
+     "step": 15
+    },
+    "aim_m": 0.3,
+    "middle": 0.3,
+    "aspect": 1.7777777777777777,
+    "min_frames": 30
+   },
+   "rule": "CM-5",
+   "says": "with a hostile person coming in from 22 m (27 degrees right) and a nearer one standing, lock_target takes the hostile one and, from 0.5 s after the press, keeps it in the middle 30% of the view, the aim point within 0.3 m of its Chest, as it runs"
+  },
+  {
+   "id": "hostile_stopped",
+   "check": "event_seen",
+   "args": {
+    "after": "hostile_b",
+    "before": "hostile_c",
+    "name": "died",
+    "where": {}
+   },
+   "rule": "CB-7",
+   "says": "the pistol stops the hostile person: a died event",
+   "kind": "pre"
+  },
+  {
+   "id": "hit_rate_pistol",
+   "check": "hit_rate",
+   "args": {
+    "bursts": [
+     {
+      "from": "pistol_0_a",
+      "to": "pistol_0_b",
+      "target": {
+       "step": 35
+      }
+     },
+     {
+      "from": "pistol_1_a",
+      "to": "pistol_1_b",
+      "target": {
+       "step": 48
+      }
+     },
+     {
+      "from": "pistol_2_a",
+      "to": "pistol_2_b",
+      "target": {
+       "step": 61
+      }
+     },
+     {
+      "from": "pistol_3_a",
+      "to": "pistol_3_b",
+      "target": {
+       "step": 74
+      }
+     },
+     {
+      "from": "pistol_4_a",
+      "to": "pistol_4_b",
+      "target": {
+       "step": 87
+      }
+     },
+     {
+      "from": "pistol_5_a",
+      "to": "pistol_5_b",
+      "target": {
+       "step": 100
+      }
+     },
+     {
+      "from": "pistol_6_a",
+      "to": "pistol_6_b",
+      "target": {
+       "step": 113
+      }
+     },
+     {
+      "from": "pistol_7_a",
+      "to": "pistol_7_b",
+      "target": {
+       "step": 126
+      }
+     },
+     {
+      "from": "pistol_8_a",
+      "to": "pistol_8_b",
+      "target": {
+       "step": 139
+      }
+     },
+     {
+      "from": "pistol_9_a",
+      "to": "pistol_9_b",
+      "target": {
+       "step": 152
+      }
+     }
+    ],
+    "min_share": 0.6,
+    "grace_s": 0.5,
+    "min_rounds": 10
+   },
+   "rule": "CB-4",
+   "says": "with lock-on at 15 m (from 0.5 s after the press), at least 60% of pistol rounds hit the person standing still in clear view they are fired at (one round at each of ten people)"
+  },
+  {
+   "id": "hit_rate_rifle",
+   "check": "hit_rate",
+   "args": {
+    "bursts": [
+     {
+      "from": "rifle_0_a",
+      "to": "rifle_0_b",
+      "target": {
+       "step": 170
+      }
+     },
+     {
+      "from": "rifle_1_a",
+      "to": "rifle_1_b",
+      "target": {
+       "step": 183
+      }
+     },
+     {
+      "from": "rifle_2_a",
+      "to": "rifle_2_b",
+      "target": {
+       "step": 196
+      }
+     },
+     {
+      "from": "rifle_3_a",
+      "to": "rifle_3_b",
+      "target": {
+       "step": 209
+      }
+     },
+     {
+      "from": "rifle_4_a",
+      "to": "rifle_4_b",
+      "target": {
+       "step": 222
+      }
+     },
+     {
+      "from": "rifle_5_a",
+      "to": "rifle_5_b",
+      "target": {
+       "step": 235
+      }
+     },
+     {
+      "from": "rifle_6_a",
+      "to": "rifle_6_b",
+      "target": {
+       "step": 248
+      }
+     },
+     {
+      "from": "rifle_7_a",
+      "to": "rifle_7_b",
+      "target": {
+       "step": 261
+      }
+     },
+     {
+      "from": "rifle_8_a",
+      "to": "rifle_8_b",
+      "target": {
+       "step": 274
+      }
+     },
+     {
+      "from": "rifle_9_a",
+      "to": "rifle_9_b",
+      "target": {
+       "step": 287
+      }
+     }
+    ],
+    "min_share": 0.6,
+    "grace_s": 0.5,
+    "min_rounds": 10
+   },
+   "rule": "CB-4",
+   "says": "with lock-on at 15 m (from 0.5 s after the press), at least 60% of rifle rounds hit the person standing still in clear view they are fired at (one round at each of ten people)"
+  },
+  {
+   "id": "hit_rate_smg",
+   "check": "hit_rate",
+   "args": {
+    "bursts": [
+     {
+      "from": "smg_0_a",
+      "to": "smg_0_b",
+      "target": {
+       "step": 305
+      }
+     },
+     {
+      "from": "smg_1_a",
+      "to": "smg_1_b",
+      "target": {
+       "step": 318
+      }
+     },
+     {
+      "from": "smg_2_a",
+      "to": "smg_2_b",
+      "target": {
+       "step": 331
+      }
+     },
+     {
+      "from": "smg_3_a",
+      "to": "smg_3_b",
+      "target": {
+       "step": 344
+      }
+     },
+     {
+      "from": "smg_4_a",
+      "to": "smg_4_b",
+      "target": {
+       "step": 357
+      }
+     },
+     {
+      "from": "smg_5_a",
+      "to": "smg_5_b",
+      "target": {
+       "step": 370
+      }
+     },
+     {
+      "from": "smg_6_a",
+      "to": "smg_6_b",
+      "target": {
+       "step": 383
+      }
+     },
+     {
+      "from": "smg_7_a",
+      "to": "smg_7_b",
+      "target": {
+       "step": 396
+      }
+     },
+     {
+      "from": "smg_8_a",
+      "to": "smg_8_b",
+      "target": {
+       "step": 409
+      }
+     },
+     {
+      "from": "smg_9_a",
+      "to": "smg_9_b",
+      "target": {
+       "step": 422
+      }
+     }
+    ],
+    "min_share": 0.45,
+    "grace_s": 0.5,
+    "min_rounds": 10
+   },
+   "rule": "CB-4",
+   "says": "with lock-on at 15 m (from 0.5 s after the press), at least 45% of smg rounds hit the person standing still in clear view they are fired at (one round at each of ten people)"
+  }
+ ],
+ "tags": []
+}

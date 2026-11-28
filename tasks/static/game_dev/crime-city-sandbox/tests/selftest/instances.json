@@ -1,0 +1,56 @@
+{
+ "format": "qa-instances/1",
+ "release": "selftest",
+ "families": {
+  "A": {
+   "w": 0.15,
+   "n": 1
+  },
+  "H": {
+   "w": 0.3,
+   "n": 2
+  },
+  "K": {
+   "w": 0.25,
+   "n": 2
+  },
+  "M": {
+   "w": 0.2,
+   "n": 1
+  },
+  "T": {
+   "w": 0.1,
+   "n": 1
+  }
+ },
+ "instances": [
+  {
+   "file": "plays/people.locomotion.same-tick.json",
+   "family": "A"
+  },
+  {
+   "file": "plays/world.replay.two-paces.json",
+   "family": "H"
+  },
+  {
+   "file": "plays/world.same_start.variations.json",
+   "family": "H"
+  },
+  {
+   "file": "plays/persistence.round_trip.damaged-slot.json",
+   "family": "K"
+  },
+  {
+   "file": "plays/persistence.round_trip.kill-after-save.json",
+   "family": "K"
+  },
+  {
+   "file": "plays/contract.devconsole.bad-input.json",
+   "family": "M"
+  },
+  {
+   "file": "plays/inv.telemetry.realtime.json",
+   "family": "T"
+  }
+ ]
+}

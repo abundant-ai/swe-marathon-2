@@ -1,0 +1,555 @@
+{
+ "format": "qa-play/1",
+ "name": "contract.devconsole/commands",
+ "template": "contract.devconsole",
+ "about": "Each DevConsole command does what chapter 17 says, at once, with the events it causes.",
+ "rules": ["AC-3", "AC-13", "AC-14", "EC-4", "MS-12"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=2", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 2
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "reset"
+  },
+  {
+   "dev": [
+    [
+     "time.set",
+     {
+      "hhmm": "21:30"
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "time"
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "fog"
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "weather"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 250
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "money"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "pistol"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "outfit": "street",
+      "health": 40,
+      "armour": 75
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "given"
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "lead": "lead_2",
+      "at": {
+       "poi": "plaza_central"
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "spawned"
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "crate",
+      "at": [12.0, 0.15, -2.0]
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "prop"
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_22_23:ab0",
+       "s": 20.0
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "car"
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "shopper",
+      "at": {
+       "sidewalk": "sw_33",
+       "s": 15.0
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "npc"
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "seat": {
+       "vehicle": {
+        "$answer": [17, "id"]
+       },
+       "index": 1
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "passenger"
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "hatchback",
+      "at": "player",
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "driving"
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0.5
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "mission.start",
+     {
+      "id": "D1",
+      "stage": 2
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "mission"
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 2
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "reset_again"
+  }
+ ],
+ "expect": [
+  {
+   "id": "reset_clock",
+   "check": "state_value",
+   "args": {
+    "mark": "reset",
+    "path": "clock",
+    "equals": "08:00"
+   },
+   "rule": "AC-3",
+   "says": "world.reset sets the clock to 08:00"
+  },
+  {
+   "id": "reset_weather",
+   "check": "state_value",
+   "args": {
+    "mark": "reset",
+    "path": "weather",
+    "equals": "clear"
+   },
+   "rule": "AC-3",
+   "says": "world.reset sets clear weather"
+  },
+  {
+   "id": "reset_variation",
+   "check": "state_value",
+   "args": {
+    "mark": "reset",
+    "path": "variation",
+    "equals": 2
+   },
+   "rule": "AC-3",
+   "says": "world.reset builds the variation asked for"
+  },
+  {
+   "id": "time_set",
+   "check": "state_value",
+   "args": {
+    "mark": "time",
+    "path": "clock",
+    "equals": "21:30"
+   },
+   "rule": "AC-3",
+   "says": "time.set with \"21:30\" sets the clock at once"
+  },
+  {
+   "id": "weather_set",
+   "check": "state_value",
+   "args": {
+    "mark": "weather",
+    "path": "weather",
+    "equals": "fog"
+   },
+   "rule": "AC-3",
+   "says": "weather.set sets the weather at once"
+  },
+  {
+   "id": "money_given",
+   "check": "state_value",
+   "args": {
+    "mark": "money",
+    "path": "player.money",
+    "equals": 750
+   },
+   "rule": "AC-3",
+   "says": "player.give adds the money given ($500 + $250)"
+  },
+  {
+   "id": "money_event",
+   "check": "event_seen",
+   "args": {
+    "name": "money_changed",
+    "after": "weather",
+    "before": "money",
+    "where": {
+     "amount": 250,
+     "reason": "setup",
+     "balance": 750
+    }
+   },
+   "rule": "EC-4",
+   "says": "money_changed announces it: amount 250, reason setup, balance 750"
+  },
+  {
+   "id": "pistol_owned",
+   "check": "state_value",
+   "args": {
+    "mark": "pistol",
+    "path": "player.weapons",
+    "contains": "pistol"
+   },
+   "rule": "AC-3",
+   "says": "player.give makes the weapon owned"
+  },
+  {
+   "id": "outfit_owned",
+   "check": "state_value",
+   "args": {
+    "mark": "given",
+    "path": "player.outfits",
+    "contains": "street"
+   },
+   "rule": "AC-3",
+   "says": "player.give makes the outfit owned"
+  },
+  {
+   "id": "health_set",
+   "check": "state_value",
+   "args": {
+    "mark": "given",
+    "path": "player.health",
+    "equals": 40
+   },
+   "rule": "AC-3",
+   "says": "player.give sets health"
+  },
+  {
+   "id": "armour_set",
+   "check": "state_value",
+   "args": {
+    "mark": "given",
+    "path": "player.armour",
+    "equals": 75
+   },
+   "rule": "AC-3",
+   "says": "player.give sets armour"
+  },
+  {
+   "id": "lead_spawned",
+   "check": "state_value",
+   "args": {
+    "mark": "spawned",
+    "path": "player.lead",
+    "equals": "lead_2"
+   },
+   "rule": "AC-3",
+   "says": "player.spawn plays the lead asked for"
+  },
+  {
+   "id": "player_placed",
+   "check": "entity_near",
+   "args": {
+    "mark": "spawned",
+    "kind": "player",
+    "id_from": {
+     "step": 13
+    },
+    "p": [-3.12, 0.15, -6.88],
+    "max_m": 0.5
+   },
+   "rule": "AC-3",
+   "says": "player.spawn answers the player's id and puts the player at the anchor"
+  },
+  {
+   "id": "spawn_teleport",
+   "check": "event_seen",
+   "args": {
+    "name": "teleport",
+    "after": "given",
+    "before": "spawned",
+    "where": {
+     "reason": "setup"
+    }
+   },
+   "rule": "AC-14",
+   "says": "the move is announced by a teleport event with reason setup"
+  },
+  {
+   "id": "crate_placed",
+   "check": "entity_near",
+   "args": {
+    "mark": "prop",
+    "kind": "prop",
+    "archetype": "crate",
+    "id_from": {
+     "step": 15
+    },
+    "p": [12.0, 0.15, -2.0],
+    "max_m": 0.5
+   },
+   "rule": "AC-3",
+   "says": "prop.spawn answers the crate's id and puts it at the point"
+  },
+  {
+   "id": "car_placed",
+   "check": "entity_near",
+   "args": {
+    "mark": "car",
+    "kind": "vehicle",
+    "archetype": "sedan",
+    "id_from": {
+     "step": 17
+    },
+    "p": [-191.625, 0.0, -156.75],
+    "max_m": 0.5
+   },
+   "rule": "AC-3",
+   "says": "vehicle.spawn answers the car's id and puts it on the lane point"
+  },
+  {
+   "id": "npc_placed",
+   "check": "entity_near",
+   "args": {
+    "mark": "npc",
+    "kind": "npc",
+    "archetype": "shopper",
+    "id_from": {
+     "step": 19
+    },
+    "p": [-46.5, 0.15, -55.25],
+    "max_m": 0.5
+   },
+   "rule": "AC-3",
+   "says": "npc.spawn answers the person's id and puts them on the sidewalk point"
+  },
+  {
+   "id": "passenger_seated",
+   "check": "event_seen",
+   "args": {
+    "name": "vehicle_entered",
+    "after": "npc",
+    "before": "passenger",
+    "where": {
+     "seat": 1
+    }
+   },
+   "rule": "AC-3",
+   "says": "npc.spawn with a seat puts the person in that seat (vehicle_entered, seat 1)"
+  },
+  {
+   "id": "driving_vehicle",
+   "check": "state_value",
+   "args": {
+    "mark": "driving",
+    "path": "player.vehicle",
+    "equals_answer": {
+     "step": 23
+    }
+   },
+   "rule": "AC-3",
+   "says": "vehicle.spawn with driver player seats the player in the new vehicle"
+  },
+  {
+   "id": "driving_seat",
+   "check": "state_value",
+   "args": {
+    "mark": "driving",
+    "path": "player.seat",
+    "equals": 0
+   },
+   "rule": "AC-3",
+   "says": "the player drives (seat 0)"
+  },
+  {
+   "id": "mission_event",
+   "check": "event_seen",
+   "args": {
+    "name": "mission",
+    "after": "driving",
+    "before": "mission",
+    "where": {
+     "id": "D1",
+     "state": "active",
+     "stage": 2
+    }
+   },
+   "rule": "AC-3",
+   "says": "mission.start starts the mission at the stage asked for"
+  },
+  {
+   "id": "mission_state",
+   "check": "state_value",
+   "args": {
+    "mark": "mission",
+    "path": "missions.D1",
+    "equals": {
+     "state": "active",
+     "stage": 2
+    }
+   },
+   "rule": "MS-12",
+   "says": "state.missions reports D1 active at stage 2"
+  },
+  {
+   "id": "reset_again_clock",
+   "check": "state_value",
+   "args": {
+    "mark": "reset_again",
+    "path": "clock",
+    "equals": "08:00"
+   },
+   "rule": "AC-3",
+   "says": "world.reset sets 08:00 again"
+  },
+  {
+   "id": "reset_again_weather",
+   "check": "state_value",
+   "args": {
+    "mark": "reset_again",
+    "path": "weather",
+    "equals": "clear"
+   },
+   "rule": "AC-3",
+   "says": "and clear weather again"
+  }
+ ],
+ "tags": []
+}

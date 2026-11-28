@@ -1,0 +1,151 @@
+{
+ "format": "qa-play/1",
+ "name": "world.weather/set-and-hold",
+ "template": "world.weather",
+ "about": "Weather changes only when set, and the state report says which it is.",
+ "rules": ["WD-14"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=1", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": false,
+    "state": true,
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 1
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "reset"
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "rain"
+  },
+  {
+   "run": 1800
+  },
+  {
+   "mark": "rain_held"
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "overcast"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "time.set",
+     {
+      "hhmm": "23:45"
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "overcast"
+  },
+  {
+   "run": 1800
+  },
+  {
+   "mark": "past_midnight"
+  }
+ ],
+ "expect": [
+  {
+   "id": "clear_after_reset",
+   "check": "state_value",
+   "args": {
+    "mark": "reset",
+    "path": "weather",
+    "equals": "clear"
+   },
+   "rule": "WD-14",
+   "says": "clear after world.reset"
+  },
+  {
+   "id": "rain",
+   "check": "state_value",
+   "args": {
+    "mark": "rain",
+    "path": "weather",
+    "equals": "rain"
+   },
+   "rule": "WD-14",
+   "says": "rain once set"
+  },
+  {
+   "id": "rain_held",
+   "check": "state_value",
+   "args": {
+    "mark": "rain_held",
+    "path": "weather",
+    "equals": "rain"
+   },
+   "rule": "WD-14",
+   "says": "still rain half an hour of game time later"
+  },
+  {
+   "id": "overcast",
+   "check": "state_value",
+   "args": {
+    "mark": "overcast",
+    "path": "weather",
+    "equals": "overcast"
+   },
+   "rule": "WD-14",
+   "says": "overcast once set"
+  },
+  {
+   "id": "overcast_held",
+   "check": "state_value",
+   "args": {
+    "mark": "past_midnight",
+    "path": "weather",
+    "equals": "overcast"
+   },
+   "rule": "WD-14",
+   "says": "still overcast past midnight"
+  }
+ ],
+ "tags": []
+}

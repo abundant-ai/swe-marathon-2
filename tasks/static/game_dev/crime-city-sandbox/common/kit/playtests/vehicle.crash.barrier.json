@@ -1,0 +1,643 @@
+{
+ "format": "qa-play/1",
+ "name": "vehicle.crash/barrier",
+ "template": "vehicle.crash",
+ "about": "Damage. A sedan already at damage 0.15 coasts from 45 km/h into a wall across the east-west arterial: the damage rises by 0.004 * (dv - 8) within 25% and, the impact being 25 km/h or more with the damage at 0.25 or above, a part comes off within 0.5 s. A sedan at damage 0.78 gets at most 10 km/h from full throttle. A sedan put on the plaza at damage 0.85 burns and explodes 8-12 s later, leaving a wreck at 1.0: a man 2 m from it dies, the player 4.5 m away loses 50 health and goes limp, and a parked sedan 5 m away is pushed at least 0.3 m off and takes 0.30 damage. Last, the player drives a sedan at 30 km/h into a man standing in the lane 35 m ahead: he goes limp within 0.2 s and, if he lives, gets up. Traffic and people are set to none.",
+ "rules": ["VH-3", "VH-4", "VH-5", "VH-6", "FT-9", "AC-10"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=14", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 400,
+  "boot_s": 60,
+  "step_s": 60,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 14
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "wall",
+      "at": [-226.75, 0.0, 51.75],
+      "size": [8.0, 3.0, 1.0],
+      "heading": 90
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_14_24:ab0",
+       "s": 5
+      },
+      "driver": "player",
+      "damage": 0.15
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [4, "id"]
+     },
+     "min_kmh": 45.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 1
+   }
+  },
+  {
+   "mark": "crash_a"
+  },
+  {
+   "run": 300
+  },
+  {
+   "mark": "crash_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_24_34:ab0",
+       "s": 5
+      },
+      "driver": "player",
+      "damage": 0.78
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 1
+   }
+  },
+  {
+   "mark": "weak_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "run": 300
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "mark": "weak_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [2.38, 0.15, 3.12],
+      "heading": 90
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": [6.88, 0.15, 5.12],
+      "heading": 0,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": [6.88, 0.15, -1.88],
+      "heading": 90,
+      "driver": "none"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 10
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": [6.88, 0.15, 3.12],
+      "heading": 90,
+      "driver": "none",
+      "damage": 0.85
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "mark": "burn_a"
+  },
+  {
+   "run": 900
+  },
+  {
+   "mark": "burn_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": [-23.0, 0.0, 51.75],
+      "heading": 270,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_34_44:ab0",
+       "s": 5
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 6,
+    "bones": {
+     "ids": [
+      {
+       "$answer": [35, "id"]
+      }
+     ],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "hit_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [36, "id"]
+     },
+     "min_kmh": 30.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      {
+       "$answer": [35, "id"]
+      }
+     ],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [36, "id"]
+     }
+    },
+    "kmh": 30.0,
+    "ticks": 300
+   }
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [36, "id"]
+     },
+     "max_kmh": 0.5
+    },
+    "max_ticks": 300
+   }
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "run": 240
+  },
+  {
+   "mark": "hit_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["damage", "burning", "vehicle", "limp"],
+     "kinds": ["player", "npc", "vehicle", "debris"]
+    },
+    "state": true,
+    "every": 6
+   }
+  }
+ ],
+ "expect": [
+  {
+   "id": "impact_damage",
+   "check": "impact_damage",
+   "args": {
+    "from": "crash_a",
+    "to": "crash_b",
+    "id_from": {
+     "step": 4,
+     "index": 0
+    },
+    "rate": 0.004,
+    "free_kmh": 8.0,
+    "tol": 0.25,
+    "min_dv_kmh": 15.0
+   },
+   "rule": "VH-3",
+   "says": "coasting into the wall from 45 km/h, the sedan's damage rises by 0.004 * (dv - 8) within 25%, dv the change of its velocity in km/h from just before the impact to 0.2 s after it, and never falls"
+  },
+  {
+   "id": "part_off",
+   "check": "part_off",
+   "args": {
+    "from": "crash_a",
+    "to": "crash_b",
+    "id_from": {
+     "step": 4,
+     "index": 0
+    },
+    "min_dv_kmh": 25.0,
+    "min_damage": 0.25,
+    "within_s": 0.5
+   },
+   "rule": "VH-4",
+   "says": "the impact (dv of 25 km/h or more, damage 0.25 or above after it) detaches a part within 0.5 s: a part_detached event and a debris entity naming the sedan"
+  },
+  {
+   "id": "engine_failed",
+   "check": "max_speed",
+   "args": {
+    "from": "weak_a",
+    "to": "weak_b",
+    "id_from": {
+     "step": 14,
+     "index": 0
+    },
+    "max_kmh": 10.0
+   },
+   "rule": "VH-5",
+   "says": "at damage 0.78 full throttle for 5 s gives the sedan at most 10 km/h"
+  },
+  {
+   "id": "burning",
+   "check": "meta_value",
+   "args": {
+    "mark": "burn_a",
+    "id_from": {
+     "step": 28,
+     "index": 0
+    },
+    "key": "burning",
+    "equals": true
+   },
+   "rule": "VH-6",
+   "says": "a sedan put down at damage 0.85 is burning (its burning metadata true)"
+  },
+  {
+   "id": "explosion",
+   "check": "explosion",
+   "args": {
+    "from": "burn_a",
+    "to": "burn_b",
+    "id_from": {
+     "step": 28,
+     "index": 0
+    },
+    "min_s": 8.0,
+    "max_s": 12.0
+   },
+   "rule": "VH-6",
+   "says": "the burning sedan explodes 8-12 s after it began burning (vehicle_exploded) and is left a wreck at damage 1.0"
+  },
+  {
+   "id": "blast_kills",
+   "check": "blast",
+   "args": {
+    "from": "burn_a",
+    "to": "burn_b",
+    "id_from": {
+     "step": 28,
+     "index": 0
+    },
+    "what": "harm",
+    "of": {
+     "id_from": {
+      "step": 25,
+      "index": 0
+     }
+    }
+   },
+   "rule": "VH-6",
+   "says": "the explosion kills a man 2 m away (his died event)"
+  },
+  {
+   "id": "blast_hurts",
+   "check": "blast",
+   "args": {
+    "from": "burn_a",
+    "to": "burn_b",
+    "id_from": {
+     "step": 28,
+     "index": 0
+    },
+    "what": "harm",
+    "tol": 0.1
+   },
+   "rule": "VH-6",
+   "says": "the player 4.5 m away loses 100 * (6 - 4.5) / 3 = 50 health, within 10%"
+  },
+  {
+   "id": "blast_push",
+   "check": "blast",
+   "args": {
+    "from": "burn_a",
+    "to": "burn_b",
+    "id_from": {
+     "step": 28,
+     "index": 0
+    },
+    "what": "push",
+    "push_m": 0.3,
+    "of": {
+     "id_from": {
+      "step": 26,
+      "index": 0
+     }
+    }
+   },
+   "rule": "VH-6",
+   "says": "a parked sedan 5 m away is pushed at least 0.3 m further off and takes 0.30 damage"
+  },
+  {
+   "id": "blast_ragdoll",
+   "check": "ragdoll",
+   "args": {
+    "from": "burn_a",
+    "to": "burn_b",
+    "kind": "player",
+    "trigger": {
+     "event": "vehicle_exploded",
+     "any": true
+    },
+    "within_ticks": 12,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.15,
+    "boxes": []
+   },
+   "rule": "FT-9",
+   "says": "the player, 4.5 m from the explosion, goes limp within 0.2 s and stays limp at least 1.0 s, no bone more than 0.05 m under the ground"
+  },
+  {
+   "id": "run_into",
+   "check": "ragdoll",
+   "args": {
+    "from": "hit_a",
+    "to": "hit_b",
+    "id_from": {
+     "step": 35,
+     "index": 0
+    },
+    "trigger": {
+     "near_id_from": {
+      "step": 36,
+      "index": 0
+     },
+     "near_m": 2.5
+    },
+    "within_ticks": 18,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.0,
+    "boxes": []
+   },
+   "rule": "FT-9",
+   "says": "a man the sedan runs into at 30 km/h (QA's bot holding the speed) goes limp within 0.2 s of the hit, counted from the sedan's centre coming within 2.5 m of him (about where a sedan's front meets him) with 0.1 s more for a shorter front, and stays limp at least 1.0 s"
+  },
+  {
+   "id": "run_into_up",
+   "check": "get_up",
+   "args": {
+    "from": "hit_a",
+    "to": "hit_b",
+    "id_from": {
+     "step": 35,
+     "index": 0
+    },
+    "ground_y": 0.0,
+    "within_s": 6.0,
+    "ratio": 0.9
+   },
+   "rule": "FT-9",
+   "says": "still alive, he gets up within 6.0 s of going limp"
+  }
+ ],
+ "tags": []
+}

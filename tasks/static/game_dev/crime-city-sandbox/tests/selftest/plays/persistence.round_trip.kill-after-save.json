@@ -1,0 +1,115 @@
+{
+ "format": "qa-play/1",
+ "name": "persistence.round_trip/kill-after-save",
+ "template": "persistence.round_trip",
+ "rules": [
+  "SV-4"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=4",
+  "--save-dir={save_dir}"
+ ],
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 120,
+  "boot_s": 60,
+  "step_s": 20,
+  "cpu_s": 300,
+  "memory_mb": 1536,
+  "disk_mb": 256
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 4
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 300
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "save",
+     {
+      "slot": 3
+     }
+    ]
+   ]
+  },
+  {
+   "wait_for": {
+    "event": "saved",
+    "max_ticks": 120
+   }
+  },
+  {
+   "restart": {}
+  },
+  {
+   "dev": [
+    [
+     "load",
+     {
+      "slot": 3
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "loaded"
+  }
+ ],
+ "expect": [
+  {
+   "id": "loads",
+   "check": "dev_result",
+   "args": {
+    "step": 6,
+    "equals": {
+     "ok": true
+    }
+   },
+   "w": 0.5
+  },
+  {
+   "id": "money_kept",
+   "check": "state_value",
+   "args": {
+    "mark": "loaded",
+    "path": "player.money",
+    "equals": 800
+   },
+   "w": 0.5
+  }
+ ],
+ "tags": []
+}

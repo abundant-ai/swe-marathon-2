@@ -1,0 +1,20 @@
+# Big, generated or private: never committed (notes/PHASE1-PLAN.md, section 4).
+# The vendor art and its import cache, every Godot cache, built libraries.
+**/.godot/
+**/assets/vendor/**/*.glb
+**/assets/vendor/**/*.gltf
+**/assets/vendor/**/*.bin
+**/assets/vendor/**/*.png
+**/assets/vendor/**/*.jpg
+**/assets/vendor/**/*.fbx
+**/assets/vendor/**/*.zip
+*.so
+*.dylib
+*.pck
+# The reference game and the hidden material are staged from the private store.
+solution/game/
+tests/private/
+experiment/
+# Built telemetry libraries and Python caches.
+common/probe/build/
+**/__pycache__/

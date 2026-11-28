@@ -1,0 +1,1046 @@
+{
+ "format": "qa-play/1",
+ "name": "combat.cover_firefight/low-wall",
+ "template": "combat.cover_firefight",
+ "about": "On the plaza with traffic and people set to none. Two armed hostile people stand 20 m beyond a low wall (2.0 x 1.1 x 0.5 m); the player stands 1.4 m behind it. The game is played twice from that start: first the player stays standing in the open for 15 s, then (the game started again) the player takes cover behind the wall and stays there for the same 15 s, health and armour topped up every 3 s both times. In cover the player leans out and fires, wounds one attacker below 30 health and shoots the other dead. Then, after a world reset, a person behind a wall and one behind a parked van are shot at.",
+ "rules": ["FT-12", "CB-6", "CB-7", "CB-8", "CB-9", "FT-9"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=24", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 900,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 1800,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 24
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-30.0, 0.15, 10.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-30.0, 0.15, 11.65],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 60,
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_b_enforcer",
+      "at": [-32.0, 0.15, -9.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_b_enforcer",
+      "at": [-27.0, 0.15, -11.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [6, "id"]
+      },
+      {
+       "$answer": [7, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "open_a"
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "open_b"
+  },
+  {
+   "restart": {}
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 24
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-30.0, 0.15, 10.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-30.0, 0.15, 11.65],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 60,
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_b_enforcer",
+      "at": [-32.0, 0.15, -9.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_b_enforcer",
+      "at": [-27.0, 0.15, -11.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [29, "id"]
+      },
+      {
+       "$answer": [30, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "mark": "cover_press"
+  },
+  {
+   "press": {
+    "cover": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["cover"]
+  },
+  {
+   "run": 119
+  },
+  {
+   "mark": "cover_a"
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 180
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "cover_b"
+  },
+  {
+   "press": {
+    "aim": 1.0
+   }
+  },
+  {
+   "mark": "lean_a"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "lean_fire_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "lean_fire_b"
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 10
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100,
+      "ammo": 24
+     }
+    ]
+   ]
+  },
+  {
+   "release": ["aim"]
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [29, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 30
+   }
+  },
+  {
+   "mark": "wound_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [29, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 45,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 570
+  },
+  {
+   "mark": "wound_b"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [30, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 30
+   }
+  },
+  {
+   "mark": "kill_a"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [30, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 80,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "kill_b"
+  },
+  {
+   "press": {
+    "move_back": 1.0
+   }
+  },
+  {
+   "mark": "leave_a"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "leave_b"
+  },
+  {
+   "release": ["move_back"]
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 24
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "wall",
+      "at": [-10.0, 0.15, 25.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-10.0, 0.15, 20.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-10.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [81, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 120
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 3
+  },
+  {
+   "mark": "wall_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 50
+  },
+  {
+   "mark": "wall_b"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "van",
+      "at": [2.0, 0.15, 25.0],
+      "heading": 90,
+      "driver": "none"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [2.0, 0.15, 20.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [2.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [97, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 120
+  },
+  {
+   "press": {
+    "lock_target": 1.0
+   }
+  },
+  {
+   "run": 3
+  },
+  {
+   "mark": "van_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 50
+  },
+  {
+   "mark": "van_b"
+  },
+  {
+   "release": ["attack", "lock_target"]
+  }
+ ],
+ "expect": [
+  {
+   "id": "cover_enter",
+   "check": "cover_enter",
+   "args": {
+    "from": "cover_press",
+    "within_s": 1.0,
+    "box": {
+     "p": [-30.0, 0.15, 10.0],
+     "size": [2.0, 1.1, 0.5],
+     "heading": 0
+    },
+    "near_m": 0.6,
+    "ratio": 0.75,
+    "ground_y": 0.15
+   },
+   "rule": "FT-12",
+   "says": "pressing cover 1.4 m from the 1.1 m wall puts the player in cover within 1.0 s: cover true, within 0.6 m of the wall, the hips at most 75% of their standing height"
+  },
+  {
+   "id": "cover_hold",
+   "check": "cover_hold",
+   "args": {
+    "from": "cover_a",
+    "to": "cover_b",
+    "box": {
+     "p": [-30.0, 0.15, 10.0],
+     "size": [2.0, 1.1, 0.5],
+     "heading": 0
+    },
+    "near_m": 0.6,
+    "ratio": 0.75,
+    "ground_y": 0.15,
+    "standing_mark": "cover_press"
+   },
+   "rule": "FT-12",
+   "says": "staying in cover (aim not held), on every frame cover is true, the player within 0.6 m of the wall and the hips at most 75% of standing height"
+  },
+  {
+   "id": "cover_cuts",
+   "check": "cover_cuts",
+   "args": {
+    "open": {
+     "from": "open_a",
+     "to": "open_b",
+     "attackers": [
+      {
+       "step": 6
+      },
+      {
+       "step": 7
+      }
+     ]
+    },
+    "cover": {
+     "from": "cover_a",
+     "to": "cover_b",
+     "attackers": [
+      {
+       "step": 29
+      },
+      {
+       "step": 30
+      }
+     ]
+    },
+    "max_ratio": 0.4,
+    "min_open_hits": 8
+   },
+   "rule": "CB-8",
+   "says": "over the same 15 s from the same start, the two attackers' damage to the player in cover is at most 40% of their damage to the player standing in the open (with at least 8 hits in the open)"
+  },
+  {
+   "id": "attackers_fire",
+   "check": "fires_at",
+   "args": {
+    "from": "open_a",
+    "to": "open_b",
+    "attackers": [
+     {
+      "step": 6
+     },
+     {
+      "step": 7
+     }
+    ],
+    "max_m": 40.0,
+    "min_hits": 1
+   },
+   "rule": "CB-9",
+   "says": "hostile enforcers with the player 21-23 m away and in sight fire at the player: each lands hits"
+  },
+  {
+   "id": "fire_from_cover",
+   "check": "lean_out",
+   "args": {
+    "from": "lean_a",
+    "within_s": 1.0,
+    "rise_m": 0.3,
+    "fire_from": "lean_fire_a",
+    "fire_to": "lean_fire_b"
+   },
+   "rule": "CB-8",
+   "says": "in cover, holding aim leans out: the Head bone rises at least 0.30 m within 1.0 s, cover still true, and attack fires"
+  },
+  {
+   "id": "retreat",
+   "check": "retreat",
+   "args": {
+    "from": "wound_a",
+    "to": "wound_b",
+    "enforcers": [
+     {
+      "step": 29
+     },
+     {
+      "step": 30
+     }
+    ],
+    "below": 30,
+    "within_s": 10.0,
+    "min_m": 10.0
+   },
+   "rule": "CB-9",
+   "says": "the attacker hit three times from cover (25 health left) ends at least 10 m farther from the player within 10 s of dropping below 30"
+  },
+  {
+   "id": "kill_hits",
+   "check": "hits",
+   "args": {
+    "from": "kill_a",
+    "to": "kill_b",
+    "targets": [
+     {
+      "step": 30
+     }
+    ],
+    "damage": 25,
+    "min_hits": 4
+   },
+   "rule": "CB-7",
+   "says": "the other attacker, shot four times with the pistol, dies on the hit that takes its health to 0: its died event"
+  },
+  {
+   "id": "kill_ragdoll",
+   "check": "ragdoll",
+   "args": {
+    "from": "kill_a",
+    "to": "kill_b",
+    "id_from": {
+     "step": 30
+    },
+    "trigger": {
+     "event": "died"
+    },
+    "within_ticks": 12,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.15
+   },
+   "rule": "CB-7",
+   "says": "dead, it goes limp within 0.2 s of its died event and stays limp; no bone more than 0.05 m under the ground"
+  },
+  {
+   "id": "cover_leave",
+   "check": "cover_leave",
+   "args": {
+    "from": "leave_a",
+    "to": "leave_b",
+    "box": {
+     "p": [-30.0, 0.15, 10.0],
+     "size": [2.0, 1.1, 0.5],
+     "heading": 0
+    },
+    "within_s": 0.5,
+    "near_m": 0.6
+   },
+   "rule": "FT-12",
+   "says": "moving away from the wall leaves cover: cover false within 0.5 s and the player more than 0.6 m from it after a second"
+  },
+  {
+   "id": "through_wall",
+   "check": "untouched",
+   "args": {
+    "from": "wall_a",
+    "to": "wall_b",
+    "targets": [
+     {
+      "step": 81
+     }
+    ],
+    "min_rounds": 3
+   },
+   "rule": "CB-6",
+   "says": "three rounds fired with lock-on at a person 10 m away behind a wall (4.0 x 2.5 m, 5 m ahead): nobody is hit through it"
+  },
+  {
+   "id": "through_van",
+   "check": "untouched",
+   "args": {
+    "from": "van_a",
+    "to": "van_b",
+    "targets": [
+     {
+      "step": 97
+     }
+    ],
+    "min_rounds": 3
+   },
+   "rule": "CB-6",
+   "says": "three rounds fired with lock-on at a person 10 m away behind a parked van broadside, 5 m ahead: nobody is hit through it"
+  }
+ ],
+ "tags": []
+}

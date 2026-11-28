@@ -1,0 +1,25 @@
+; Vehicles with seat markers, one of them moving (main.gd), for the QA kit's seat reads and its
+; body query: checks/test_godot_seats.py plays fixtures/seats/seats.json on it.
+config_version=5
+
+[application]
+
+config/name="Seats"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7")
+
+[autoload]
+
+DevConsole="*res://dev_console.gd"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+common/physics_ticks_per_second=60
+common/physics_jitter_fix=0.0
+3d/run_on_separate_thread=false
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

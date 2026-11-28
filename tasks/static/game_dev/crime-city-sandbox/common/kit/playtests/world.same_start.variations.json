@@ -1,0 +1,110 @@
+{
+ "format": "qa-play/1",
+ "name": "world.same_start/variations",
+ "template": "world.same_start",
+ "about": "The same variation gives the same starting population and another variation another one; --variation=7 starts the population world.reset builds for 7.",
+ "rules": ["AC-16", "AC-1"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=7", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "boot"
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 7
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "a"
+  },
+  {
+   "run": 30
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 7
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "b"
+  },
+  {
+   "run": 12
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 8
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "c"
+  },
+  {
+   "run": 6
+  }
+ ],
+ "expect": [
+  {
+   "id": "same_start",
+   "check": "same_start",
+   "args": {
+    "same": ["a", "b"],
+    "different": ["a", "c"],
+    "kinds": ["player", "npc", "vehicle"]
+   },
+   "rule": "AC-16",
+   "says": "the same variation number rebuilds the same starting population; 8 builds another"
+  },
+  {
+   "id": "variation_flag",
+   "check": "same_start",
+   "args": {
+    "same": ["boot", "a"],
+    "different": ["boot", "c"],
+    "kinds": ["player", "npc", "vehicle"]
+   },
+   "rule": "AC-1",
+   "says": "--variation=7 starts the population of variation 7"
+  }
+ ],
+ "tags": []
+}

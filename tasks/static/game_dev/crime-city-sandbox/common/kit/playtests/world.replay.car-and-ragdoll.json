@@ -1,0 +1,183 @@
+{
+ "format": "qa-play/1",
+ "name": "world.replay/car-and-ragdoll",
+ "template": "world.replay",
+ "about": "One input timeline played twice, the second time with a pause between ticks: the player drives a sedan at 30 km/h into a person standing in the lane, who goes limp and is thrown. Traffic and people set to none. The game does the same thing tick for tick, the car and the ragdoll's bones included.",
+ "rules": ["AC-15", "AC-17", "FT-9"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=6", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  },
+  {
+   "pace_ms": 4
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["limp"]
+    },
+    "every": 3
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 6
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_44_54:ab1",
+       "s": 5.0
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": {
+       "lane": "e_44_54:ab1",
+       "s": 42.0
+      },
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["limp"]
+    },
+    "every": 3,
+    "bones": {
+     "ids": [
+      {
+       "$answer": [4, "id"]
+      }
+     ],
+     "names": ["Hips", "Head", "LeftFoot", "RightHand"]
+    }
+   }
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [3, "id"]
+     }
+    },
+    "kmh": 30.0,
+    "ticks": 480
+   }
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "run": 150
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "car_moves",
+   "check": "moved",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "id_from": {
+     "step": 3
+    },
+    "min_m": 30.0,
+    "horizontal": true
+   },
+   "rule": "AC-17",
+   "says": "the player drives the sedan at least 30 m during the timeline",
+   "kind": "pre"
+  },
+  {
+   "id": "run_into",
+   "check": "ragdoll",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "id_from": {
+     "step": 4,
+     "index": 0
+    },
+    "trigger": {
+     "near_id_from": {
+      "step": 3,
+      "index": 0
+     },
+     "near_m": 2.5
+    },
+    "within_ticks": 18,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.0,
+    "boxes": []
+   },
+   "rule": "FT-9",
+   "says": "the person the sedan runs into at 30 km/h goes limp within 0.2 s of the hit (the sedan's centre within 2.5 m of them, with 0.1 s more for a shorter front) and stays limp at least 1.0 s"
+  },
+  {
+   "id": "replay",
+   "check": "replay_equal",
+   "args": {},
+   "rule": "AC-17",
+   "says": "both runs give the same trace"
+  }
+ ],
+ "tags": ["physics-sensitive"]
+}

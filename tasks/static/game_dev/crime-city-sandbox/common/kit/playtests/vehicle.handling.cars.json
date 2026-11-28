@@ -1,0 +1,3204 @@
+{
+ "format": "qa-play/1",
+ "name": "vehicle.handling/cars",
+ "template": "vehicle.handling",
+ "about": "Proving runs for each model in turn, the player driving alone, on Downtown's north-south arterial (level dry asphalt) and in the parking lot north-east of the plaza: 0-60 km/h at full throttle; a full stop from 60 km/h, dry and then in rain; the handbrake alone from 40 km/h; the turning circle at 8 km/h with full lock. Each model's body is a physics body on the vehicles layer with its listed mass. Traffic and people are set to none for the runs, and the wet stop uses the dry stop's lane. (Top speed needs a straight of at least 1.5 km, which Downtown does not have.)",
+ "rules": ["VH-1", "VH-2", "IN-2", "AC-6"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=12", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 900,
+  "boot_s": 60,
+  "step_s": 60,
+  "cpu_s": 1200,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [3, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "sedan_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "sedan_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "sedan_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [3, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "sedan_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [3, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "sedan_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [28, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "sedan_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [28, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "sedan_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [42, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "sedan_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "sedan_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [57, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "sedan_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [57, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "sedan_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "hatchback",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [67, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "hatchback_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "hatchback_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "hatchback_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [67, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "hatchback_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [67, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "hatchback_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "hatchback",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [92, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "hatchback_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [92, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "hatchback_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "hatchback",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [106, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "hatchback_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "hatchback_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "hatchback",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [121, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "hatchback_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [121, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "hatchback_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sports",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [131, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "sports_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "sports_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "sports_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [131, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "sports_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [131, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "sports_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sports",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [156, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "sports_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [156, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "sports_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sports",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [170, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "sports_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "sports_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sports",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [185, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "sports_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [185, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "sports_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "suv",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [195, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "suv_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "suv_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "suv_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [195, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "suv_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [195, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "suv_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "suv",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [220, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "suv_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [220, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "suv_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "suv",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [234, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "suv_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "suv_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "suv",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [249, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "suv_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [249, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "suv_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "van",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [259, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "van_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "van_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "van_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [259, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "van_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [259, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "van_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "van",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [284, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "van_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [284, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "van_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "van",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [298, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "van_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "van_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "van",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [313, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "van_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [313, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "van_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "pickup",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "query": [
+    {
+     "id": "body",
+     "type": "body",
+     "entity": {
+      "$answer": [323, "id"]
+     }
+    }
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "pickup_walk_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "mark": "pickup_walk_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "pickup_accel_a"
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [323, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "pickup_brake_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [323, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 480
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "pickup_brake_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 12
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "rain"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "pickup",
+      "at": {
+       "lane": "e_30_31:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [348, "id"]
+     },
+     "min_kmh": 60.0
+    },
+    "max_ticks": 900
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "pickup_wet_a"
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [348, "id"]
+     },
+     "max_kmh": 0.2
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "run": 10
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "pickup_wet_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "weather.set",
+     {
+      "kind": "clear"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "pickup",
+      "at": {
+       "lane": "e_32_33:ab0",
+       "s": 8
+      },
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "press": {
+    "accelerate": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [362, "id"]
+     },
+     "min_kmh": 40.0
+    },
+    "max_ticks": 600
+   }
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "handbrake": 1.0
+   }
+  },
+  {
+   "mark": "pickup_handbrake_a"
+  },
+  {
+   "run": 90
+  },
+  {
+   "release": ["handbrake"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "mark": "pickup_handbrake_b"
+  },
+  {
+   "run": 240
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "pickup",
+      "at": [29.25, 0.15, 135.65],
+      "heading": 0,
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [377, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 240,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 1
+   }
+  },
+  {
+   "mark": "pickup_circle_a"
+  },
+  {
+   "cruise": {
+    "entity": {
+     "id": {
+      "$answer": [377, "id"]
+     }
+    },
+    "kmh": 8.0,
+    "ticks": 900,
+    "hold": {
+     "steer_left": 1.0
+    }
+   }
+  },
+  {
+   "mark": "pickup_circle_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "every": 30
+   }
+  }
+ ],
+ "expect": [
+  {
+   "id": "sedan_body",
+   "check": "body",
+   "args": {
+    "step": 4,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 1350.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the sedan model's root is a physics body on the vehicles layer with a mass of 1,350 kg within 10%"
+  },
+  {
+   "id": "sedan_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "sedan_walk_a",
+    "to": "sedan_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the sedan model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "sedan_accel",
+   "check": "accel",
+   "args": {
+    "from": "sedan_accel_a",
+    "to": "sedan_brake_a",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 4.5,
+    "max_s": 6.5
+   },
+   "rule": "VH-1",
+   "says": "the sedan model reaches 60 km/h from rest in 4.5-6.5 s"
+  },
+  {
+   "id": "sedan_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "sedan_brake_a",
+    "to": "sedan_brake_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 13.5,
+    "max_m": 19.5
+   },
+   "rule": "VH-1",
+   "says": "the sedan model stops from 60 km/h within 13.5-19.5 m on dry asphalt"
+  },
+  {
+   "id": "sedan_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "sedan_wet_a",
+    "to": "sedan_wet_b",
+    "id_from": {
+     "step": 28,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "sedan_brake_a",
+     "to": "sedan_brake_b",
+     "id_from": {
+      "step": 3,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the sedan model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "sedan_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "sedan_handbrake_a",
+    "to": "sedan_handbrake_b",
+    "id_from": {
+     "step": 42,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the sedan model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "sedan_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "sedan_circle_a",
+    "to": "sedan_circle_b",
+    "id_from": {
+     "step": 57,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 10.0,
+    "max_m": 13.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the sedan model's position traces a circle 10.0-13.0 m across"
+  },
+  {
+   "id": "hatchback_body",
+   "check": "body",
+   "args": {
+    "step": 68,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 1150.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the hatchback model's root is a physics body on the vehicles layer with a mass of 1,150 kg within 10%"
+  },
+  {
+   "id": "hatchback_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "hatchback_walk_a",
+    "to": "hatchback_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the hatchback model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "hatchback_accel",
+   "check": "accel",
+   "args": {
+    "from": "hatchback_accel_a",
+    "to": "hatchback_brake_a",
+    "id_from": {
+     "step": 67,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 4.0,
+    "max_s": 6.0
+   },
+   "rule": "VH-1",
+   "says": "the hatchback model reaches 60 km/h from rest in 4.0-6.0 s"
+  },
+  {
+   "id": "hatchback_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "hatchback_brake_a",
+    "to": "hatchback_brake_b",
+    "id_from": {
+     "step": 67,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 13.0,
+    "max_m": 19.0
+   },
+   "rule": "VH-1",
+   "says": "the hatchback model stops from 60 km/h within 13.0-19.0 m on dry asphalt"
+  },
+  {
+   "id": "hatchback_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "hatchback_wet_a",
+    "to": "hatchback_wet_b",
+    "id_from": {
+     "step": 92,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "hatchback_brake_a",
+     "to": "hatchback_brake_b",
+     "id_from": {
+      "step": 67,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the hatchback model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "hatchback_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "hatchback_handbrake_a",
+    "to": "hatchback_handbrake_b",
+    "id_from": {
+     "step": 106,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the hatchback model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "hatchback_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "hatchback_circle_a",
+    "to": "hatchback_circle_b",
+    "id_from": {
+     "step": 121,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 9.0,
+    "max_m": 12.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the hatchback model's position traces a circle 9.0-12.0 m across"
+  },
+  {
+   "id": "sports_body",
+   "check": "body",
+   "args": {
+    "step": 132,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 1300.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the sports model's root is a physics body on the vehicles layer with a mass of 1,300 kg within 10%"
+  },
+  {
+   "id": "sports_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "sports_walk_a",
+    "to": "sports_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the sports model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "sports_accel",
+   "check": "accel",
+   "args": {
+    "from": "sports_accel_a",
+    "to": "sports_brake_a",
+    "id_from": {
+     "step": 131,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 2.8,
+    "max_s": 4.2
+   },
+   "rule": "VH-1",
+   "says": "the sports model reaches 60 km/h from rest in 2.8-4.2 s"
+  },
+  {
+   "id": "sports_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "sports_brake_a",
+    "to": "sports_brake_b",
+    "id_from": {
+     "step": 131,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 12.0,
+    "max_m": 17.0
+   },
+   "rule": "VH-1",
+   "says": "the sports model stops from 60 km/h within 12.0-17.0 m on dry asphalt"
+  },
+  {
+   "id": "sports_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "sports_wet_a",
+    "to": "sports_wet_b",
+    "id_from": {
+     "step": 156,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "sports_brake_a",
+     "to": "sports_brake_b",
+     "id_from": {
+      "step": 131,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the sports model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "sports_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "sports_handbrake_a",
+    "to": "sports_handbrake_b",
+    "id_from": {
+     "step": 170,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the sports model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "sports_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "sports_circle_a",
+    "to": "sports_circle_b",
+    "id_from": {
+     "step": 185,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 10.5,
+    "max_m": 13.5
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the sports model's position traces a circle 10.5-13.5 m across"
+  },
+  {
+   "id": "suv_body",
+   "check": "body",
+   "args": {
+    "step": 196,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 1900.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the suv model's root is a physics body on the vehicles layer with a mass of 1,900 kg within 10%"
+  },
+  {
+   "id": "suv_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "suv_walk_a",
+    "to": "suv_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the suv model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "suv_accel",
+   "check": "accel",
+   "args": {
+    "from": "suv_accel_a",
+    "to": "suv_brake_a",
+    "id_from": {
+     "step": 195,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 5.0,
+    "max_s": 7.5
+   },
+   "rule": "VH-1",
+   "says": "the suv model reaches 60 km/h from rest in 5.0-7.5 s"
+  },
+  {
+   "id": "suv_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "suv_brake_a",
+    "to": "suv_brake_b",
+    "id_from": {
+     "step": 195,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 14.5,
+    "max_m": 21.0
+   },
+   "rule": "VH-1",
+   "says": "the suv model stops from 60 km/h within 14.5-21.0 m on dry asphalt"
+  },
+  {
+   "id": "suv_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "suv_wet_a",
+    "to": "suv_wet_b",
+    "id_from": {
+     "step": 220,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "suv_brake_a",
+     "to": "suv_brake_b",
+     "id_from": {
+      "step": 195,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the suv model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "suv_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "suv_handbrake_a",
+    "to": "suv_handbrake_b",
+    "id_from": {
+     "step": 234,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the suv model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "suv_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "suv_circle_a",
+    "to": "suv_circle_b",
+    "id_from": {
+     "step": 249,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 11.0,
+    "max_m": 14.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the suv model's position traces a circle 11.0-14.0 m across"
+  },
+  {
+   "id": "van_body",
+   "check": "body",
+   "args": {
+    "step": 260,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 2300.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the van model's root is a physics body on the vehicles layer with a mass of 2,300 kg within 10%"
+  },
+  {
+   "id": "van_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "van_walk_a",
+    "to": "van_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the van model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "van_accel",
+   "check": "accel",
+   "args": {
+    "from": "van_accel_a",
+    "to": "van_brake_a",
+    "id_from": {
+     "step": 259,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 6.0,
+    "max_s": 9.0
+   },
+   "rule": "VH-1",
+   "says": "the van model reaches 60 km/h from rest in 6.0-9.0 s"
+  },
+  {
+   "id": "van_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "van_brake_a",
+    "to": "van_brake_b",
+    "id_from": {
+     "step": 259,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 16.0,
+    "max_m": 23.0
+   },
+   "rule": "VH-1",
+   "says": "the van model stops from 60 km/h within 16.0-23.0 m on dry asphalt"
+  },
+  {
+   "id": "van_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "van_wet_a",
+    "to": "van_wet_b",
+    "id_from": {
+     "step": 284,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "van_brake_a",
+     "to": "van_brake_b",
+     "id_from": {
+      "step": 259,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the van model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "van_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "van_handbrake_a",
+    "to": "van_handbrake_b",
+    "id_from": {
+     "step": 298,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the van model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "van_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "van_circle_a",
+    "to": "van_circle_b",
+    "id_from": {
+     "step": 313,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 12.0,
+    "max_m": 15.5
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the van model's position traces a circle 12.0-15.5 m across"
+  },
+  {
+   "id": "pickup_body",
+   "check": "body",
+   "args": {
+    "step": 324,
+    "query": "body",
+    "layer": 2,
+    "mass_kg": 2000.0,
+    "tol": 0.1
+   },
+   "rule": "VH-1",
+   "says": "the pickup model's root is a physics body on the vehicles layer with a mass of 2,000 kg within 10%"
+  },
+  {
+   "id": "pickup_walk_keys",
+   "check": "moved",
+   "args": {
+    "from": "pickup_walk_a",
+    "to": "pickup_walk_b",
+    "kind": "vehicle",
+    "min_m": 0.0,
+    "max_m": 0.3
+   },
+   "rule": "IN-2",
+   "says": "move_forward held for 1 s in the pickup model does not drive it (at most 0.3 m)"
+  },
+  {
+   "id": "pickup_accel",
+   "check": "accel",
+   "args": {
+    "from": "pickup_accel_a",
+    "to": "pickup_brake_a",
+    "id_from": {
+     "step": 323,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_s": 5.5,
+    "max_s": 8.0
+   },
+   "rule": "VH-1",
+   "says": "the pickup model reaches 60 km/h from rest in 5.5-8.0 s"
+  },
+  {
+   "id": "pickup_brake_dry",
+   "check": "brake",
+   "args": {
+    "from": "pickup_brake_a",
+    "to": "pickup_brake_b",
+    "id_from": {
+     "step": 323,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "min_m": 15.5,
+    "max_m": 22.0
+   },
+   "rule": "VH-1",
+   "says": "the pickup model stops from 60 km/h within 15.5-22.0 m on dry asphalt"
+  },
+  {
+   "id": "pickup_brake_wet",
+   "check": "brake",
+   "args": {
+    "from": "pickup_wet_a",
+    "to": "pickup_wet_b",
+    "id_from": {
+     "step": 348,
+     "index": 0
+    },
+    "kmh": 60.0,
+    "dry": {
+     "from": "pickup_brake_a",
+     "to": "pickup_brake_b",
+     "id_from": {
+      "step": 323,
+      "index": 0
+     }
+    },
+    "min_ratio": 1.15,
+    "max_ratio": 1.6
+   },
+   "rule": "VH-2",
+   "says": "in rain the pickup model needs 1.15-1.60 times its dry distance to stop from 60 km/h"
+  },
+  {
+   "id": "pickup_handbrake",
+   "check": "decel",
+   "args": {
+    "from": "pickup_handbrake_a",
+    "to": "pickup_handbrake_b",
+    "id_from": {
+     "step": 362,
+     "index": 0
+    },
+    "min_kmh": 35.0,
+    "over_s": 1.0,
+    "min_mps2": 2.0,
+    "max_mps2": 6.0
+   },
+   "rule": "IN-2",
+   "says": "the handbrake held alone slows the pickup model at 2-6 m/s^2 from 40 km/h"
+  },
+  {
+   "id": "pickup_circle",
+   "check": "turn_circle",
+   "args": {
+    "from": "pickup_circle_a",
+    "to": "pickup_circle_b",
+    "id_from": {
+     "step": 377,
+     "index": 0
+    },
+    "kmh": 8.0,
+    "kmh_tol": 1.5,
+    "min_turn_deg": 180.0,
+    "min_m": 12.0,
+    "max_m": 15.0
+   },
+   "rule": "VH-1",
+   "says": "at 8 km/h with full lock the pickup model's position traces a circle 12.0-15.0 m across"
+  }
+ ],
+ "tags": []
+}

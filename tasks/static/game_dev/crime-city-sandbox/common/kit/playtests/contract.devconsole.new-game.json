@@ -1,0 +1,240 @@
+{
+ "format": "qa-play/1",
+ "name": "contract.devconsole/new-game",
+ "template": "contract.devconsole",
+ "about": "--role=solo starts a new game: lead_1 at the Downtown safehouse at 08:00 in clear weather, with $500, fists only, 100 health, no armour, and D1 the only mission offered.",
+ "rules": ["AC-1", "EC-1", "CA-3", "MS-12", "UI-6"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=1", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 1
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "start"
+  }
+ ],
+ "expect": [
+  {
+   "id": "money",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "player.money",
+    "equals": 500
+   },
+   "rule": "EC-1",
+   "says": "a new game starts with $500"
+  },
+  {
+   "id": "fists_only",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "player.weapons",
+    "equals": ["fists"]
+   },
+   "rule": "EC-1",
+   "says": "and fists only"
+  },
+  {
+   "id": "health",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "player.health",
+    "equals": 100
+   },
+   "rule": "EC-1",
+   "says": "100 health"
+  },
+  {
+   "id": "armour",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "player.armour",
+    "equals": 0
+   },
+   "rule": "EC-1",
+   "says": "no armour"
+  },
+  {
+   "id": "lead",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "player.lead",
+    "equals": "lead_1"
+   },
+   "rule": "UI-6",
+   "says": "playing lead_1"
+  },
+  {
+   "id": "leads_unlocked",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "player.leads_unlocked",
+    "equals": ["lead_1"]
+   },
+   "rule": "CA-3",
+   "says": "only lead_1 unlocked"
+  },
+  {
+   "id": "clock",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "clock",
+    "equals": "08:00"
+   },
+   "rule": "UI-6",
+   "says": "at 08:00"
+  },
+  {
+   "id": "weather",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "weather",
+    "equals": "clear"
+   },
+   "rule": "UI-6",
+   "says": "in clear weather"
+  },
+  {
+   "id": "map",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "map",
+    "equals": "downtown"
+   },
+   "rule": "UI-6",
+   "says": "in Downtown"
+  },
+  {
+   "id": "d1",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.D1.state",
+    "equals": "available"
+   },
+   "rule": "UI-6",
+   "says": "with D1 available"
+  },
+  {
+   "id": "locked_C1",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.C1.state",
+    "equals": "locked"
+   },
+   "rule": "MS-12",
+   "says": "C1 locked until unlocked"
+  },
+  {
+   "id": "locked_R1",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.R1.state",
+    "equals": "locked"
+   },
+   "rule": "MS-12",
+   "says": "R1 locked until unlocked"
+  },
+  {
+   "id": "locked_D2",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.D2.state",
+    "equals": "locked"
+   },
+   "rule": "MS-12",
+   "says": "D2 locked until unlocked"
+  },
+  {
+   "id": "locked_C2",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.C2.state",
+    "equals": "locked"
+   },
+   "rule": "MS-12",
+   "says": "C2 locked until unlocked"
+  },
+  {
+   "id": "locked_R2",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.R2.state",
+    "equals": "locked"
+   },
+   "rule": "MS-12",
+   "says": "R2 locked until unlocked"
+  },
+  {
+   "id": "locked_H1",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.H1.state",
+    "equals": "locked"
+   },
+   "rule": "MS-12",
+   "says": "H1 locked until unlocked"
+  },
+  {
+   "id": "locked_H2",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "missions.H2.state",
+    "equals": "locked"
+   },
+   "rule": "MS-12",
+   "says": "H2 locked until unlocked"
+  },
+  {
+   "id": "at_safehouse",
+   "check": "entity_near",
+   "args": {
+    "mark": "start",
+    "kind": "player",
+    "p": [-157.69, 0.15, -165.75],
+    "max_m": 0.5
+   },
+   "rule": "UI-6",
+   "says": "the new game starts at safehouse_downtown"
+  }
+ ],
+ "tags": []
+}

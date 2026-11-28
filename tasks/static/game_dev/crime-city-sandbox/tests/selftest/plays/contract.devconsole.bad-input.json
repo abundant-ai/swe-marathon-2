@@ -1,0 +1,172 @@
+{
+ "format": "qa-play/1",
+ "name": "contract.devconsole/bad-input",
+ "template": "contract.devconsole",
+ "rules": [
+  "AC-2",
+  "AC-3"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=3",
+  "--save-dir={save_dir}"
+ ],
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 120,
+  "boot_s": 60,
+  "step_s": 20,
+  "cpu_s": 300,
+  "memory_mb": 1536,
+  "disk_mb": 256
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 3.0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "no.such.command",
+     {}
+    ],
+    [
+     "player.spawn",
+     {
+      "at": "nowhere"
+     }
+    ],
+    [
+     "player.spawn",
+     {
+      "at": [
+       1,
+       2
+      ]
+     }
+    ],
+    [
+     "time.set",
+     {
+      "hhmm": 1230
+     }
+    ],
+    [
+     "weather.set",
+     {
+      "kind": [
+       "rain"
+      ]
+     }
+    ],
+    [
+     "player.give",
+     {
+      "money": "lots"
+     }
+    ],
+    [
+     "world.reset",
+     {
+      "variation": "x"
+     }
+    ],
+    [
+     "load",
+     {
+      "slot": 9
+     }
+    ],
+    [
+     "save",
+     {
+      "slot": -1.5
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "after"
+  },
+  {
+   "dev": [
+    [
+     "state",
+     {}
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [
+       2.0,
+       0.0,
+       -3.0
+      ],
+      "heading": 90.0
+     }
+    ]
+   ]
+  }
+ ],
+ "expect": [
+  {
+   "id": "answers",
+   "check": "dev_answers",
+   "args": {
+    "steps": [
+     2
+    ]
+   },
+   "w": 0.5
+  },
+  {
+   "id": "state_after",
+   "check": "dev_result",
+   "args": {
+    "step": 5,
+    "equals": {
+     "ok": true
+    }
+   },
+   "w": 0.25
+  },
+  {
+   "id": "float_args",
+   "check": "dev_result",
+   "args": {
+    "step": 6,
+    "equals": {
+     "ok": true
+    }
+   },
+   "w": 0.25
+  }
+ ],
+ "tags": []
+}
