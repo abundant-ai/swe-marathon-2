@@ -141,7 +141,8 @@ Behaviours:
 - **stand (r)**: stays within r metres of its spot (for contacts, their point of interest).
 - **work**: moves about its district on foot.
 - **patrol**: police walk the sidewalks of their district or drive its roads in police cars, two
-  officers per car.
+  officers per car. A patrol on its round keeps to its sidewalks or roads whoever is about; it
+  answers an alert by chapter 9.
 - **guard turf**: stays inside its crew's turf, unless it is fighting or fleeing.
 - **drive**: drives a vehicle in traffic (chapter 7).
 
@@ -482,7 +483,9 @@ guns in the right hand (FT-11).
   hostile; an enforcer below 30 health ends at least 10 m farther from the player within 10 s of
   dropping below it.
 - **CB-10** Police fight only at alert level 3 or more; at levels 1 and 2 they try to arrest
-  (AL-9).
+  (AL-9). Below level 3 (and from 2 s after the level drops below 3) no police officer damages the
+  player or is `hostile`; from level 3 a police officer within 40 m of the player with a clear line to
+  them fires and lands at least one hit within 15 s, as CB-9's enforcers do.
 
 ## 9. Crime and the alert level
 
@@ -503,6 +506,22 @@ Witnesses are police officers and everyone else except crew members (civilians, 
 contacts). A witness sees a crime when there is a clear line from
 its head bone to any part of the player (or the player's vehicle) within its sight range at that
 moment. Gunshots are also heard: anyone within 40 m witnesses `shots_fired` without a clear line.
+Sight is blocked by the static world (buildings, walls, terrain, props) and by vehicles, not by
+people; distances are from the witness's `Head` bone to the nearest point of the player's body or
+of the vehicle the player is in.
+
+What one crime is: `shots_fired` is one crime per burst (rounds fired less than 3 s apart);
+`assault` and `assault_police` are one crime per victim while the player's hits on that victim come
+less than 3 s apart; `speeding` is one crime per episode, from reaching 30 km/h over the limit of the
+lane the vehicle is on, in sight of a police officer, until 3 s in a row below it; every other crime
+is one per act (each crossing, pull-out, person hit, kill and vehicle destroyed). A crime happens at
+its first act: its `crime` event fires then, with that act's witnesses, and AL-2's times run from it.
+One act may be several crimes, each with its own event (a round that kills a civilian belongs to a
+`shots_fired` burst and is also an `assault` and a `murder`). A vehicle is destroyed because of the
+player when the player was driving it or was the last to damage it. People that blast kills are
+killed by the player (`murder`, or `kill_police` for an officer), and so are people killed by a
+vehicle the player drives (also a `hit_person`). A kill is the player's when the player dealt the
+last hit before the `died` event.
 
 | Weather | Sight range by day (06:00-20:00) | By night (20:00-06:00) |
 | --- | --- | --- |
@@ -510,7 +529,7 @@ moment. Gunshots are also heard: anyone within 40 m witnesses `shots_fired` with
 | rain | 45 m | 30 m |
 | fog | 30 m | 30 m |
 
-| Level | Police cars (two officers each) | Tactical vans | First unit within 25 m of the player | Search zone radius | Cooling-off time |
+| Level | Police cars (two officers each) | Tactical vans (two tactical officers each) | First unit within 25 m of the player | Search zone radius | Cooling-off time |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 1 | 0 | 60 s | 100 m | 20 s |
 | 2 | 2 | 0 | 50 s | 150 m | 30 s |
@@ -519,40 +538,60 @@ moment. Gunshots are also heard: anyone within 40 m witnesses `shots_fired` with
 | 5 | 8 | 2 | 40 s | 320 m | 90 s |
 
 - **AL-1** Every crime in the table emits a `crime` event with its type and the ids of its
-  witnesses, witnessed or not.
+  witnesses, witnessed or not (an empty list when nobody witnessed it).
 - **AL-2** A crime seen by a police officer raises the alert level within 1.0 s. A crime seen only
   by other witnesses is phoned in: the level rises 10 s (within 1 s) after the crime if at least one
-  of those witnesses is still alive then.
+  of those witnesses is still alive then (no `died` event for it by then).
 - **AL-3** A crime nobody witnesses never raises the level.
 - **AL-4** A witnessed crime sets the level to the higher of the current level and the crime's
   level; if the player is already at or above the crime's level, the level goes up by one, to at
-  most 5. Mission events can set the level directly (chapter 10).
+  most 5. Mission events can set the level directly (chapter 10). So, when it is reported: below the
+  crime's level, the level becomes the crime's level; at or above it, one more (5 stays 5).
 - **AL-5** Sight ranges follow the table: a crime committed just outside every witness's range is
-  not seen, and one just inside is.
+  not seen, and one just inside is (3 m either side of the range; the same for the 40 m hearing).
+  By day and by night follow the clock (day from 06:00 to 20:00).
 - **AL-6** Response: the first police unit gets within 25 m of the player within the table's time
   after the level is reached; within 90 s the number of police vehicles moving towards the player
-  or within 100 m of them reaches the table's count, and never exceeds it by more than 2.
+  or within 100 m of them reaches the table's count, and never exceeds it by more than 2. A police
+  unit is a police vehicle (`police` or `tactical_van`; not a wreck, nor one carrying the player)
+  or a police officer on foot; the first unit within 25 m may be either, the counts are of vehicles.
+  A unit moves towards the player when its horizontal distance to them has fallen by 2 m or more over
+  the last 2 s. For the upper bound, the vehicles counted are those within 100 m and those dispatched
+  (`police_dispatched`) that are moving towards the player, from 90 s after the level is reached.
 - **AL-7** Police come from police stations or from patrols already in the world: a unit new to the
   world first appears at least 100 m from the player and outside the camera's view. Units move
   continuously (never more than 1.1 times their model's top speed), drive on roads, and never pass
-  through buildings or other static geometry.
+  through buildings or other static geometry. Outside the view means outside the camera's view
+  frustum (its `fov` and the window's aspect), whatever stands in between. Officers ride in their
+  vehicle from the moment it appears; an officer on foot moves at most 1.1 times FT-1's sprint pace.
 - **AL-8** From level 3, within 90 s of reaching it, police set at least one roadblock ahead of the
   player: at least two police vehicles stopped across the road (within 30 degrees of square to the
   lanes, covering at least 70% of the carriageway's width) on a lane within 300 m ahead of the
-  player, along the lanes the player's vehicle can reach.
+  player, along the lanes the player's vehicle can reach. This binds while the player drives. The
+  vehicles of a roadblock stand below 1 km/h, on a lane (not in a junction's box), with their middles
+  within 8 m of one cross-section of the road; their widths across the road, all its lanes in both
+  directions, are what covers the carriageway; "ahead" is by road from the player's lane in the
+  direction it faces.
 - **AL-9** Arrest: while the level is 1 or 2, a player on foot or in a vehicle stopped below 1 km/h
   with a police officer within 2.0 m for 3.0 s is arrested (event `arrested`). The player comes back
   at the nearest police station's respawn point within 10 s, at level 0, having lost every weapon
-  except fists and paid a $500 fine (or all their money if they have less).
+  except fists and paid a $500 fine (or all their money if they have less). Distances are
+  horizontal, from the officer's position to the player's. Coming back is a `teleport` and a
+  `respawned` event naming the station (`poi`), the player within 2 m of its respawn point.
+  "Nearest" here and in AL-10 is by straight line, among the current map's stations or hospitals.
 - **AL-10** Death: the player comes back at the nearest hospital's respawn point within 10 s (event
   `respawned`), with 100 health, 0 armour and level 0, having paid a $250 fee (or all their money
-  if less), keeping weapons.
+  if less), keeping weapons. Coming back is a `teleport` and `respawned` naming the hospital, the
+  player within 2 m of its respawn point.
 - **AL-11** Escape: the search zone is centred where a unit last saw the player, or where the crime
   happened if no unit has seen the player yet. The level drops to 0 only once the player has stayed
   outside the zone and out of every unit's sight for the cooling-off time; being seen re-centres the
   zone and restarts the time. The level never drops in any other way except arrest and death.
 - **AL-12** At level 0 police leave the player alone: no police unit keeps moving towards the
-  player for more than 10 s, and no officer stays within 5 m of the player for more than 5 s.
+  player for more than 10 s, and no officer stays within 5 m of the player for more than 5 s. This
+  binds from 10 s after the level returns to 0, on the units that responded (dispatched, or within
+  100 m of the player during the alert) and on officers on foot away from the station's exit and the
+  respawn points; a patrol on its own round is not moving towards the player.
 
 ## 10. Missions
 
@@ -956,9 +995,10 @@ archetype), `reckless` drives that way, and `idle` holds the vehicle still.
 ### Events
 
 - **AC-13** `DevConsole.event` fires: `crime` (`type`, `witnesses`, `pos`), `alert_changed`
-  (`level`, `reason`), `police_dispatched` (`unit`, `from`), `vehicle_entered` and
+  (`level`, `reason`: the crime type that raised it, or `escaped`, `arrested`, `died` or `mission`),
+  `police_dispatched` (`unit`, `from`: the police station's id, or `patrol`), `vehicle_entered` and
   `vehicle_exited` (`entity`, `vehicle`, `seat`), `damaged` (`entity`, `source`, `amount`,
-  `health`, `armour`), `died` (`entity`, `cause`), `arrested`, `respawned` (`entity`, `poi`),
+  `health`, `armour`), `died` (`entity`, `cause`), `arrested` (`entity`), `respawned` (`entity`, `poi`),
   `mission` (`id`, `state`, `stage`), `money_changed` (`amount`, `reason`, `balance`),
   `phone_message` (`from`, `text`), `vehicle_exploded` (`vehicle`), `part_detached` (`vehicle`,
   `debris`), `saved` and `loaded` (`slot`), `map_transition` (`from`, `to`, `vehicle`), and
