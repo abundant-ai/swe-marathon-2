@@ -107,16 +107,43 @@ def as_user(cmd: list[str], limits: list[str]) -> list[str]:
     ]
 
 
+def live_user_pids() -> list[int]:
+    """Processes of the verifier uid that are still running; zombies are dead and do not count."""
+    pids = []
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            status = (d / "status").read_text()
+        except OSError:
+            continue
+        fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+        uid = fields.get("Uid", "").split()
+        state = fields.get("State", "").split()
+        if uid and int(uid[0]) == UID and state and state[0] not in ("Z", "X"):
+            pids.append(int(d.name))
+    return pids
+
+
+def reap() -> None:
+    """Collect exited children (orphans reparent to this process when it is the container's init)."""
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
+
+
 def kill_user() -> None:
-    """Kill every process of the verifier uid, until none is left."""
+    """Kill every process of the verifier uid, until none is left running."""
     for _ in range(200):
         subprocess.run(
             ["pkill", "-KILL", "-u", str(UID)], check=False, capture_output=True
         )
-        alive = subprocess.run(
-            ["pgrep", "-u", str(UID)], check=False, capture_output=True
-        )
-        if alive.returncode == 1:
+        reap()
+        if not live_user_pids():
             return
         time.sleep(0.05)
     raise EvaluationError("processes of the verifier uid survived repeated kills")
@@ -331,10 +358,22 @@ def clear_reward_names(logs: Path) -> None:
     """Remove whatever stands under the reward names, files, links or directories alike."""
     for name in REWARD_NAMES:
         p = logs / name
-        if p.is_symlink() or p.is_file():
-            p.unlink()
-        elif p.is_dir():
+        if p.is_dir() and not p.is_symlink():
             shutil.rmtree(p)
+        elif os.path.lexists(p):
+            p.unlink()
+
+
+def abandon(logs: Path) -> None:
+    """An evaluation error: stop the uid's processes and leave no reward file of anyone's."""
+    try:
+        for _ in range(5):
+            subprocess.run(
+                ["pkill", "-KILL", "-u", str(UID)], check=False, capture_output=True
+            )
+            reap()
+    finally:
+        clear_reward_names(logs)
 
 
 def write_new(path: Path, text: str) -> None:
@@ -355,7 +394,11 @@ def main() -> int:
         kill_user()
     except EvaluationError as exc:
         print(f"evaluation error: {exc}", file=sys.stderr)
+        abandon(ctx.logs)
         return 2
+    except BaseException:
+        abandon(ctx.logs)
+        raise
     clear_reward_names(ctx.logs)
     write_new(
         ctx.logs / "metrics.json",

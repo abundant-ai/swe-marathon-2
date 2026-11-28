@@ -55,6 +55,91 @@ def spec_rules(spec_dir: Path) -> dict[str, str]:
     return out
 
 
+# Rules no recipe names and no mutant lists, with the reason each is still covered or why it is
+# not graded on its own.
+NOT_TARGETED = {
+    "every case": (
+        (
+            "CLI-1 CLI-2 CLI-3 CLI-4 CLI-5 CLI-8 ENT-1 ENT-2 ENT-3 ENT-4 ENT-5 ENT-6 ENT-7 MATCH-1 "
+            "CELL-1 CELL-2 CELL-3 CELL-4 CELL-5 CELL-6 IMP-1 LAY-1"
+        ),
+        (
+            "the invocation, the entity model, identity and the basic cell dispositions have no off "
+            "state: every case passes through them, and a build that gets one wrong fails broadly"
+        ),
+    ),
+    "every conflict or check": (
+        "CLI-9 GATE-1 GATE-2 GATE-6 BOX-1 BOX-2 BOX-6 CELL-17 SAME-4",
+        (
+            "the order and hand-off of the checks, the scope and line endings of boxes, git's own "
+            "boxes and the no-loss guard run on every conflicted or checked result (the gate, "
+            "refinement and settle mutants move them)"
+        ),
+    ),
+    "every rename or data case": (
+        "CELL-13 CELL-14 CELL-15 CELL-16 CELL-18 DATA-1 DATA-2 PLACE-4",
+        (
+            "the rename cells, the names carried to chapter 9, the JSON and TOML readers and the "
+            "survivor union apply to every rename, data or modify/delete case (the rename, call-site "
+            "and data mutants move them)"
+        ),
+    ),
+    "fast paths a trivial program reproduces": (
+        "ROUTE-1 ROUTE-3",
+        (
+            "identical sides and one side unchanged give one input back; every such candidate is "
+            "reproduced by taking one side, so none is kept"
+        ),
+    ),
+    "not behaviour": (
+        "ROUTE-5 OUT-1 OUT-2 OUT-3 OUT-4 OUT-5 OUT-6 OUT-7 OUT-8",
+        "a stub kept for numbering, and the chapter 16 list of what the replacement need not do",
+    ),
+}
+RESTRICTIONS = [
+    (
+        "Called as `BASE OURS THEIRS -o OUT -l 7 -p PATH`",
+        "every case uses that form; `-p` decides the file type and the hint's path",
+    ),
+    (
+        "Status 2 writes nothing",
+        "the binary and non-UTF-8 cases (90 kept); mutant `cli_nowrite`",
+    ),
+    (
+        "Binary means a NUL in the first 8,192 bytes",
+        "NUL at 8,001-8,191 (status 2) paired with a NUL after 8,192 (merged); mutant `binary`",
+    ),
+    (
+        "Input that is not UTF-8 ends with status 2",
+        "the non-UTF-8 cases; mutant `binary`",
+    ),
+    (
+        "10 seconds and 4 GB per merge",
+        "enforced by the runner (timeout and address-space limit)",
+    ),
+    (
+        "Build with `cargo build --release --offline` in `/app/driver`",
+        "the verifier builds that way, as an unprivileged user, with no network",
+    ),
+    (
+        "Only the toolchain and the offline registry",
+        "the verifier's registry holds the same 64 crates only",
+    ),
+    (
+        "Must not call the installed build",
+        "the verifier image has none; a wrapper around it scores 0",
+    ),
+    (
+        "Inputs of at most 100 KB",
+        "our promise: the export refuses larger cases (largest kept 9.4 KB)",
+    ),
+    (
+        "Hint on the first closing marker only",
+        "two boxes far apart (60 kept); mutant `cli_hint`",
+    ),
+]
+
+
 def main() -> int:
     """Write the inventory as Markdown and print the totals."""
     analysis = json.loads(Path(sys.argv[1]).read_text())
@@ -121,8 +206,22 @@ def main() -> int:
             unexercised.append(rid)
     lines += [
         "",
-        f"Rules with neither a targeting recipe nor a mutant: {len(unexercised)} ({', '.join(unexercised)}).",
+        f"Rules with neither a targeting recipe nor a mutant: {len(unexercised)}.",
+        "",
     ]
+    lines += ["| Why | Rules | Coverage |", "| --- | --- | --- |"]
+    classified = set()
+    for why, (ids, reason) in NOT_TARGETED.items():
+        lines.append(f"| {why} | {ids} | {reason} |")
+        classified.update(ids.split())
+    left = [r for r in unexercised if r not in classified]
+    lines += ["", f"Unclassified: {', '.join(left) if left else 'none'}.", ""]
+    lines += [
+        "## Stated restrictions",
+        "",
+        "| Restriction | Failing case or enforcing check |",
+    ]
+    lines += ["| --- | --- |", *[f"| {a} | {b} |" for a, b in RESTRICTIONS]]
     Path(sys.argv[6]).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(
         f"features: {len(feat_kills)} measured, below 3: {short}; rules: {len(rules)}, unexercised: {len(unexercised)}"
