@@ -1598,9 +1598,9 @@ def test_the_agent_works_as_dev_and_the_hooks_are_out_of_its_reach(task_root):
     ), "the record is read before anything is graded"
     instruction = (task_root / "instruction.md").read_text()
     assert (
-        "Another copy of\nSymPy's source, from an installed package, a download, a mirror or any other place, is not to\nbe used"
-        in instruction
-    )
+        "Another copy of SymPy's source, from an installed package, a download, a mirror or any other place, is not "
+        "to be used, in whole or in part."
+    ) in " ".join(instruction.split())
     for word in ("fsmaint", "collect", "sweep", "mark", "verifier", "late", "signed"):
         assert not re.search(rf"\b{word}\b", instruction.lower()), word
     # the hooks say nothing of what the copy is for
@@ -1701,7 +1701,7 @@ def test_the_work_limit_is_the_time_limit_the_task_gives(task_root):
     delivery_text = (task_root / "tests" / "verifier" / "delivery.py").read_text()
     in_sweep = int(re.search(r"^WORK_LIMIT_SECONDS=(\d+)$", sweep, re.MULTILINE)[1])
     in_verifier = int(
-        re.search(r"^WORK_LIMIT_SEC = (\d+)", delivery_text, re.MULTILINE)[1]
+        re.search(r"^WORK_LIMIT_SEC = \(?\s*(\d+)", delivery_text, re.MULTILINE)[1]
     )
     assert limits == {in_sweep} == {in_verifier} == {34560}, (
         limits,
@@ -1958,6 +1958,21 @@ def test_local_polls_end_nothing_and_an_opening_while_a_session_is_alive_ends_no
         and openings[0]["session_alive"] is None
         and openings[0]["ending"].startswith("waits")
     )
+    # the time counted from the start of the work has run out, the time counted from the first process has
+    # not: the opening is an end of the work, and dev is not ended while its session is alive
+    openings = netcheck.watch(
+        iter(polls("occcoc")),
+        {},
+        ending=lambda: ended.append(7) or (1, 0),
+        session_alive=lambda: True,
+        limit=lambda: time.time() - 1,
+        stop_limit=later,
+    )
+    assert (
+        ended == [3, 4, 5]
+        and openings[0]["after_limit"] is True
+        and openings[0]["ending"].startswith("waits")
+    ), openings
     now = time.time()
     assert (
         netcheck.session_seen({"available": True, "alive": [5], "last_scan": now})
@@ -2124,11 +2139,13 @@ def test_an_honest_turn_run_to_the_limit_keeps_the_unit_file_it_had_then(
     ) == {"U0001": "restored"}
 
 
-def test_the_time_the_work_is_given_counts_from_the_first_process_of_dev(
+def test_the_end_of_the_work_counts_from_its_start_and_the_first_process_only_from_when_dev_may_be_ended(
     tmp_path, verifier_call
 ):
     """The net check reads the start of the first process of `dev` that began after the work did, whose
-    parent is not one of `dev`'s, from /proc; the limit counts from it, and the collect step uses it."""
+    parent is not one of `dev`'s, from /proc; it decides only when `dev` may be ended. The end of the
+    work counts from the start of the work, which the setup step took before the agent's clock: a write
+    after the start of the work plus the limit is late, whenever the first process began."""
     netcheck = load_netcheck(tmp_path / "state")
     proc = tmp_path / "proc"
     ticks = os.sysconf("SC_CLK_TCK")
@@ -2156,19 +2173,37 @@ def test_the_time_the_work_is_given_counts_from_the_first_process_of_dev(
             f"{pid} ({name}) " + " ".join(fields) + "\n"
         )
     table = netcheck.processes(str(proc))
-    first = netcheck.first_process(table, 1000, now - 50, str(proc))
+    sighted = {}
+    assert (
+        netcheck.first_process(
+            table, 1000, now - 50, str(proc), sighted=sighted, now=now
+        )
+        is None
+    ), "one look counts none"
+    assert (
+        netcheck.first_process(
+            table, 1000, now - 50, str(proc), sighted=sighted, now=now + 0.5
+        )
+        is None
+    ), sighted
+    first = netcheck.first_process(
+        table, 1000, now - 50, str(proc), sighted=sighted, now=now + 1.0
+    )
     assert (
         first["pid"] == 11
         and first["parent"] == "su"
         and abs(first["start"] - (now - 40)) < 0.5
     ), first
+    assert netcheck.first_process(table, 1000, now - 50, str(proc)) is None, (
+        "called once, it takes no process"
+    )
     assert (
         netcheck.first_process(
             table, 1000, now - 50, str(proc), known=dict(first, start=now - 45)
         )["start"]
         == now - 45
     )
-    # the collect step counts from it
+    # the collect step counts from the start of the work
     hooks = Hooks(tmp_path / "t", WORK_LIMIT_SECONDS=1)
     hooks.setup()
     started = hooks.work_started()
@@ -2198,12 +2233,229 @@ def test_the_time_the_work_is_given_counts_from_the_first_process_of_dev(
     record = hooks.record()
     assert (
         record["end_from"] == "limit"
-        and record["end_bound"] == started + 2.0
-        and record["limit_from"] == "first process"
+        and record["end_bound"] == started + 1.0
+        and record["limit_from"] == "start of the work"
     ), record
     arrived = tmp_path / "arrived" / "sympy"
     platform_copy(hooks.tree, arrived)
-    assert read_delivery(verifier_call, arrived, hooks.lib / "key")["late"] == ["o.py"]
+    assert read_delivery(verifier_call, arrived, hooks.lib / "key")["late"] == [
+        "n.py",
+        "o.py",
+    ]
+
+
+def test_a_fetch_saved_after_egress_returns_is_late_and_the_last_second_before_the_limit_is_kept(
+    tmp_path, verifier_call
+):
+    """The re-check's probe of a capped turn: the agent's clock starts a moment after the setup step,
+    egress returns a moment after the agent's limit, and a fetched body is saved by rename just after.
+    The end of the work is the start of the work plus the limit (3 s here), before egress returns: the
+    fetched file is late, and is taken as the real net check's last copy of it by the end, which holds
+    the honest save made in the last second before the limit."""
+    hooks = Hooks(
+        tmp_path / "t",
+        real_netcheck=True,
+        WORK_LIMIT_SECONDS=3,
+        netcheck_settings={
+            "WORK_LIMIT_SECONDS": 3,
+            "COPY_LEAD_SECONDS": 2.5,
+            "COPY_INTERVAL_SECONDS": 0.2,
+        },
+    )
+    hooks.setup()
+    started = hooks.work_started()
+    hooks.network("closed")
+    (hooks.tree / "m.py").write_text("def f():\n    return 1\n")
+    time.sleep(max(0.0, started + 2.3 - time.time()))
+    (hooks.tree / "m.py.new").write_text("def f():\n    return 2\n")
+    os.replace(
+        hooks.tree / "m.py.new", hooks.tree / "m.py"
+    )  # the last second before the limit
+    time.sleep(max(0.0, started + 3.5 - time.time()))
+    hooks.network("open")  # egress returns after the agent's limit
+    time.sleep(0.3)
+    (hooks.tree / "m.py.new").write_text("def f():\n    return 'UPSTREAM'\n")
+    os.replace(hooks.tree / "m.py.new", hooks.tree / "m.py")  # the fetched body
+    time.sleep(0.5)
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    assert (
+        record["end_from"] == "limit"
+        and record["end_bound"] == started + 3
+        and record["limit_from"] == "start of the work"
+    ), record
+    entry = {item["path"]: item for item in record["entries"]}["m.py"]
+    assert entry["copied"]["captured"] <= record["end_bound"], entry
+    assert (hooks.tree / "m.py").read_text() == "def f():\n    return 2\n"
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key")
+    assert result["late"] == [] and list(result["copied"]) == ["m.py"], result
+    assert graded_states(
+        verifier_call, {"sympy/m.py": PLACEHOLDER}, arrived.parent
+    ) == {"U0001": "restored"}
+
+
+def test_with_no_first_process_seen_dev_is_never_ended_by_time_alone(tmp_path):
+    """Fix round 10: no process of `dev` is seen (no `/proc` here, so the sessions cannot be seen either),
+    the network is closed through the turn and opens after the time the work is given, counted from the
+    start of the work. The opening is an end of the work, but `dev` is not ended by it: without a first
+    process the net check cannot tell when the platform's own limit, which counts from later, falls, so it
+    ends `dev` only once a fresh look finds no session (here never), or the collect step does."""
+    hooks = Hooks(
+        tmp_path / "t",
+        real_netcheck=True,
+        WORK_LIMIT_SECONDS=3,
+        netcheck_settings={
+            "WORK_LIMIT_SECONDS": 3,
+            "COPY_LEAD_SECONDS": 2.5,
+            "COPY_INTERVAL_SECONDS": 0.2,
+        },
+    )
+    hooks.setup()
+    started = hooks.work_started()
+    hooks.network("closed")
+    time.sleep(max(0.0, started + 3.5 - time.time()))
+    hooks.network("open")  # after the limit counted from the start
+    opened = hooks.state / "netcheck-open.json"
+    for _ in range(100):
+        if opened.exists():
+            break
+        time.sleep(0.05)
+    time.sleep(1.0)  # time for an ending, were there one
+    record = json.loads(opened.read_text())
+    sessions = json.loads((hooks.state / "sessions.json").read_text())
+    hooks.run("fsmaint-sweep", egress="open")
+    assert sessions.get("first_process") is None and record["session_alive"] is None, (
+        sessions,
+        record,
+    )
+    assert record["after_limit"] is True, record
+    assert record.get("ending", "").startswith("waits") and "ended_at" not in record, (
+        record
+    )
+
+
+def test_a_short_command_before_the_agents_clock_is_never_the_first_process(
+    tmp_path, monkeypatch
+):
+    """Fix round 11 (the seventh re-check's stop path): after the setup step and before its own clock starts,
+    Harbor runs a short `pwd` as `dev`. A look that catches it must not take it for the first process,
+    or the time counted from it runs out before the agent's limit and a blip of egress during the turn
+    ends `dev` early. A process counts only once two looks at least a second apart both see it alive.
+    The shipped watch runs on a stand-in /proc with the limit scaled to 3 s: the `pwd` (under a root `su`)
+    for one look, Harbor's clock at 1.0 s, the agent's session from 1.3 s on, a blip at 1.7 s. The net
+    check before fix round 11 took the `pwd` and ended `dev` 0.8 s before the agent's limit."""
+    netcheck = load_netcheck(tmp_path / "state")
+    monkeypatch.setattr(
+        netcheck, "cap_processes", lambda *args, **kwargs: None
+    )  # no prlimit on stand-in pids
+    dev, limit = 10001, 3.0
+    ticks = os.sysconf("SC_CLK_TCK")
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    s = time.time()  # the start of the work
+    boot = s - 5000.0
+    done = threading.Event()
+
+    def uptime():  # the stand-in's time since boot keeps up with the clock
+        while not done.is_set():
+            (proc / "uptime.tmp").write_text(f"{time.time() - boot:.2f} 0.00\n")
+            os.replace(proc / "uptime.tmp", proc / "uptime")
+            time.sleep(0.01)
+
+    def process(pid, uid, parent, name, start):
+        (proc / str(pid)).mkdir()
+        (proc / str(pid) / "status").write_text(
+            f"Name:\t{name}\nState:\tS (sleeping)\nPPid:\t{parent}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n"
+        )
+        fields = (
+            ["S", str(parent)]
+            + ["0"] * 17
+            + [str(round((start - boot) * ticks))]
+            + ["0"] * 10
+        )
+        (proc / str(pid) / "stat").write_text(
+            f"{pid} ({name}) " + " ".join(fields) + "\n"
+        )
+
+    def at(moment):
+        time.sleep(max(0.0, s + moment - time.time()))
+
+    (proc / "uptime").write_text(f"{time.time() - boot:.2f} 0.00\n")
+    process(1, 0, 0, "init", s - 100)
+    threading.Thread(target=uptime, daemon=True).start()
+    record, stop = {}, threading.Event()
+    watcher = threading.Thread(
+        target=netcheck.watch_sessions,
+        args=(dev, record, stop, str(proc), netcheck.SESSION_SECONDS),
+        kwargs={"since": s},
+        daemon=True,
+    )
+    watcher.start()
+    at(0.2)
+    process(20, 0, 1, "su", s + 0.2)
+    process(21, dev, 20, "pwd", s + 0.2)  # Harbor's pre-clock command
+    scans = record.get("scans", 0)
+    while (
+        record.get("scans", 0) < scans + 2 and time.time() < s + 0.8
+    ):  # one whole look sees it
+        time.sleep(0.01)
+    shutil.rmtree(proc / "21")
+    shutil.rmtree(proc / "20")
+    clock = s + 1.0  # Harbor's clock starts
+    at(1.3)
+    process(30, 0, 1, "su", s + 1.3)
+    process(31, dev, 30, "bash", s + 1.3)  # the agent's session, for the turn
+    ended = {}
+
+    def ending():
+        ended["at"] = time.time()
+        return 0, 0
+
+    def stop_of():  # as the net check's main() counts it
+        first = record.get("first_process")
+        if not (
+            isinstance(first, dict) and isinstance(first.get("start"), (int, float))
+        ):
+            return None
+        return max(first["start"], s) + limit
+
+    assert (
+        'return max(first["start"], since) + WORK_LIMIT_SECONDS'
+        in (ENV_DIR / "fsmaint-netcheck").read_text()
+    )
+    moments = [1.4, 1.5, 1.6, 1.7] + [1.8 + 0.1 * k for k in range(39)]
+    states = ["closed", "closed", "closed", "open"] + ["closed"] * 39
+
+    def stream():
+        for moment, state in zip(moments, states):
+            at(moment)
+            yield s + moment, state, ("pypi.org" if state == "open" else None)
+
+    openings = netcheck.watch(
+        stream(),
+        {},
+        ending=ending,
+        session_alive=lambda: netcheck.session_seen(record),
+        limit=lambda: s + limit,
+        stop_limit=stop_of,
+    )
+    stop.set()
+    done.set()
+    watcher.join(2)
+    first = record.get("first_process")
+    assert (
+        first is not None
+        and first["pid"] == 31
+        and abs(first["start"] - (s + 1.3)) < 0.1
+    ), first
+    assert record["first_process_passed_over"] >= 1, record
+    assert [
+        (o["session_alive"], o["after_limit"], o.get("ending", "")[:5])
+        for o in openings
+    ] == [(True, False, "waits")], openings
+    assert "at" in ended and ended["at"] >= clock + limit, (ended, clock + limit)
 
 
 def test_the_limit_ends_the_work_when_the_collect_step_began_after_it_with_no_session_seen(

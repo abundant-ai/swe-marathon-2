@@ -15,9 +15,9 @@
 # that name, one over the limits, no room to copy it, an end of the work the work itself kept from
 # the net check, or this step did not finish: the empty tree stays); the record (.fsmaint.json) lists
 # every entry with the times it had when the work ended, and the end of the work as far as it can be
-# told. The end is never later than WORK_LIMIT_SECONDS after the work began (counted from the first
-# process of `dev` fsmaint-netcheck saw begin, else from the start of the work), the time the work
-# is given.
+# told. The end is never later than WORK_LIMIT_SECONDS after the work began (counted from the start
+# of the work, which the setup step took before the clock of the work's own limit began), the time
+# the work is given.
 STATE=/var/lib/fsmaint
 [ -f "$STATE/out/progress" ] && printf '%-4095s\n' '{"stage": "started"}' 1<>"$STATE/out/progress"
 LIMIT_ENTRIES=200000
@@ -102,10 +102,10 @@ main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started> <wo
       not the last of many short ones), no session was alive when this step began, and the sessions
       were watched until then (by the listing of the stopped processes, or, when it is missing, by
       the net check's own record of the sessions).
-    - `limit`: the start of the first process of `dev` that fsmaint-netcheck saw begin after the
-      work began (else the start of the work), plus the time the work is given (WORK_LIMIT_SECONDS):
-      the end is never later than that. With no other end known, it is the end when this step began
-      after it: the hosts cannot answer before the time the work is given has run out.
+    - `limit`: the start of the work plus the time the work is given (WORK_LIMIT_SECONDS): the end is
+      never later than that. The setup step took the start of the work before the clock of the work's
+      own limit began, so this comes no later than that limit, and so before the hosts answer again.
+      With no other end known, it is the end when this step began after it.
     Without any, the start of the work (`unchanged`) when no listed entry changed since then.
     When the work itself kept the end from the net check (every poll failed for want of the
     machine's resources, so no stretch formed, or polls saw no answer while the hosts answered this
@@ -586,23 +586,12 @@ def main(argv):
                 continue
         return False
 
-    def first_start():
-        """The start of the first process of `dev` the net check saw begin after the work began, when it is
-        one (at or after the start of the work, before this step); else None."""
-        first = sessions.get("first_process") if isinstance(sessions, dict) else None
-        value = first.get("start") if isinstance(first, dict) else None
-        if isinstance(value, (int, float)) and not isinstance(value, bool) and work_started is not None \
-                and work_started - 1 <= value <= started:
-            return float(value)
-        return None
-
     nc_bound, nc_from, nc_note, nc_cause = netcheck_end()
     ss_bound, ss_note = session_end()
-    anchor = first_start()
-    limit_from = "first process" if anchor is not None else "start of the work"
-    if anchor is None:
-        anchor = work_started
-    limit_bound = anchor + work_limit if anchor is not None else None
+    # the end of the work counts from the start of the work; the first process of `dev`, which began
+    # after the clock of the work's own limit, only decides when the net check may end `dev`
+    limit_from = "start of the work"
+    limit_bound = work_started + work_limit if work_started is not None else None
     known = sorted((bound, origin) for bound, origin in ((nc_bound, nc_from), (ss_bound, "session")) if bound is not None)
     if known and limit_bound is not None and limit_bound < known[0][0]:
         known.insert(0, (limit_bound, "limit"))

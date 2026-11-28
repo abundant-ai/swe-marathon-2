@@ -22,6 +22,7 @@ replayed call should return.
 from __future__ import annotations
 
 import collections
+import gc
 import json
 import math
 import os
@@ -310,7 +311,9 @@ def run_vectors(
         "ended_or_stopped": 0,
         "malformed": 0,
         "units_cut": 0,
+        "over_half_bound": 0,
     }
+    near = set()  # units with a call that took more than half its time, as this process measured it
     jobs = []
     for mod, p in sorted(payload.items()):
         vecs = [tuple(v) for v in p["vectors"] if v[1] in restored_uids]
@@ -366,6 +369,7 @@ def run_vectors(
                     )
                     kind, found = child.message(until)
                     started = kind == "message" and found.get("start") == vid
+                    began = time.monotonic()
                     if started:
                         kind, found = child.message(until)
                     if (
@@ -375,6 +379,10 @@ def run_vectors(
                         and isinstance(found.get("c"), list)
                     ):
                         got[vid] = found["c"]
+                        if time.monotonic() - began > bound(uid) / 2:
+                            count("over_half_bound")
+                            with lock:
+                                near.add(uid)
                         pending.pop(0)
                         continue
                     if kind == "timeout" and time.monotonic() >= deadline:
@@ -403,6 +411,7 @@ def run_vectors(
             results.update(got)
     if stats is not None:
         stats.update(counts)
+        stats["over_half_bound_units"] = sorted(near)[:100]
     return results
 
 
@@ -1053,6 +1062,10 @@ def measure(context: VerificationContext) -> Measurement:
     uid_of = {v[0]: v[1] for p in payload.values() for v in p["vectors"]}
     deciding = sorted(vid for vid in gold if vid not in documented)
     unit_set = {uid_of[vid] for vid in deciding if vid in uid_of}
+    # the private inputs are millions of objects this process holds to the end: a full collection over
+    # them pauses every reader of the runners for a second or more, so they are moved out of its reach
+    gc.collect()
+    gc.freeze()
     if not deciding or not unit_set or not U:
         raise EvaluationError("Private verifier inputs hold no unit or no counted call")
     metrics: dict[str, Any] = {
@@ -1064,7 +1077,8 @@ def measure(context: VerificationContext) -> Measurement:
         "tests_total": T,
         "tests_passing": 0,
         # the reward's measure: units with a call no docstring example or visible test repeats,
-        # and those calls
+        # and those calls; a unit left out of the set is graded through the graded items of other
+        # units that fail without its body (the build's tests/private/unit_coverage.json names them)
         "units_set": len(unit_set),
         "units_set_passing": 0,
         "units_left_out": U - len(unit_set),
@@ -1142,7 +1156,7 @@ def measure(context: VerificationContext) -> Measurement:
             for c in delivered.copied.values()
             for uid in (c.get("units_changed_after") or [])
         }
-    )[:2671]
+    )[:5000]
     metrics["end_from"], metrics["end_note"] = delivered.end_from, delivered.end_note
     if delivered.state != "listed":
         reason = delivered.summary.get("refused") or delivered.state

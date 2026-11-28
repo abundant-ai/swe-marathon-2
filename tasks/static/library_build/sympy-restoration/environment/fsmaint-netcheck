@@ -21,12 +21,13 @@ progress: its first and last closed poll's start and how many) and `openings`, o
 ended: `last_closed_at` and `end_bound` (the start of its last closed poll, a moment at which no host
 answered yet), `first_open_at` (the start of the poll that ended it), `closed_since`, `closed_polls`,
 the host, whether an exec session of `dev` was seen alive then (`session_alive`: true, false, or
-null when the sessions could not be seen) and whether the time the work is given had run out
-(`after_limit`). At every opening the record is also written to STATE/netcheck-open.json before
-anything is ended. When a fresh look at the processes found no session alive, or the time had run
-out, every process of `dev` is then stopped and ended, and how many passes that took and how many were
-left are added; an opening while a session is alive, or while the sessions cannot be seen, and time is
-left ends nothing until a fresh look finds no session or the time runs out.
+null when the sessions could not be seen) and whether the time the work is given had run out, counted
+from the start of the work (`after_limit`). At every opening the record is also written to
+STATE/netcheck-open.json before anything is ended. When a fresh look at the processes found no session
+alive, or the time had run out counted from the first process (below), every process of `dev` is then
+stopped and ended, and how many passes that took and how many were left are added; an opening while a
+session is alive, or while the sessions cannot be seen, and that time is left ends nothing until a
+fresh look finds no session or that time runs out.
 Polling goes on after an opening; the step that measures the tree stops it.
 
 Processes. A thread looks at /proc every SESSION_SECONDS. The exec sessions of `dev`: a process of
@@ -35,8 +36,12 @@ or that has no parent here (parent 0, started from outside this process namespac
 the processes of `dev` start, in the background or detached, has a parent of `dev`, then the first
 process or another that takes in orphans, never such a parent, so it is never a session. The first
 process: the process of `dev` that began first after the work began, among those whose parent is not
-a process of `dev` (its start read from /proc, in seconds since boot): the time the work is given is
-counted from its start (else from the start of the work). Every process of `dev` gets a limit of
+a process of `dev` (its start read from /proc, in seconds since boot) and that two looks at least
+CONFIRM_SECONDS apart both saw alive, so that a short command run as `dev` before the clock of the
+work's own limit starts (such as a `pwd`, gone within milliseconds) is never taken for it: for
+ending `dev`, the time the work is given is counted from its start (with none, `dev` is never ended
+by time), so that nothing ends the work before its own limit; the end of the work always counts from
+the start of the work, which comes before the clock of that limit. Every process of `dev` gets a limit of
 NPROC_CAP processes of its user (lowered, never raised), so that one that forks without end leaves
 room for everything else. STATE/sessions.json holds when each session was first and last seen alive
 (the start of the look), the first process, how many processes of `dev` were seen at most, the last
@@ -80,6 +85,8 @@ MIN_CLOSED = 3             # closed polls in a row that make a stretch whose end
 LOCAL_LIMIT = 3            # local polls in a row after which the network is said not to be seen
 KEEP_OPENINGS = 32         # openings kept in the status, the longest stretch always among them
 SESSION_SECONDS = 0.1      # between two looks at the processes of USER
+CONFIRM_SECONDS = 1.0      # a process is the first process only once two looks this far apart both saw it alive
+SAME_START_SECONDS = 0.5   # two reads of one process's start differ by less than this
 KEEP_SESSIONS = 64         # sessions kept in the record, the last seen always among them
 SESSION_PARENTS = ("su", "runuser")
 USER = "dev"
@@ -295,10 +302,19 @@ def started_at(pid, proc=PROC):
         return None
 
 
-def first_process(table, uid, since, proc=PROC, known=None, examined=None):
+def first_process(table, uid, since, proc=PROC, known=None, examined=None, sighted=None, now=None,
+                  confirm=CONFIRM_SECONDS, gone=None):
     """The process of the user `uid` that began first at or after `since` among those whose parent is
     not a process of that user, as {"pid", "start", "name", "parent"}; `known` (the earliest found
-    before) when none began earlier. Processes in `examined` (a set, added to) are not read again."""
+    before) when none began earlier. Processes in `examined` (a set, added to) are not read again.
+
+    A process counts only once two looks at least `confirm` seconds apart have both seen it alive, with
+    the same start: `sighted` (a dict kept from one look to the next) holds the ones seen so far and when
+    (`now`, the start of this look), so a short command, such as a `pwd` run as that user before the
+    clock of the work's limit starts, is gone by the second look and never counts (it is added to
+    `gone`, a list, when given). Called once, without `sighted`, it returns `known`."""
+    sighted = {} if sighted is None else sighted
+    now = time.time() if now is None else now
     best = known
     for pid, (owner, parent, name, state) in table.items():
         if owner != uid or state in ("Z", "X") or (examined is not None and pid in examined):
@@ -311,7 +327,27 @@ def first_process(table, uid, since, proc=PROC, known=None, examined=None):
         start = started_at(pid, proc)
         if start is None or start < since or (best is not None and start >= best["start"]):
             continue
-        best = {"pid": pid, "start": start, "name": name, "parent": above[2] if above else None}
+        found = {"pid": pid, "start": start, "name": name, "parent": above[2] if above else None}
+        sighted.setdefault(pid, dict(found, seen=now))
+    for pid in sorted(sighted):
+        candidate = sighted[pid]
+        info = table.get(pid)
+        if info is None or info[0] != uid or info[3] in ("Z", "X"):
+            del sighted[pid]                      # gone before a second look: never the first process
+            if examined is not None:
+                examined.discard(pid)
+            if gone is not None:
+                gone.append(candidate)
+        elif best is not None and candidate["start"] >= best["start"]:
+            del sighted[pid]                      # began after the first process found since
+        elif now - candidate["seen"] >= confirm:
+            del sighted[pid]
+            again = started_at(pid, proc)
+            if again is None or abs(again - candidate["start"]) > SAME_START_SECONDS:
+                if examined is not None:          # another process under the same pid: looked at afresh
+                    examined.discard(pid)
+                continue
+            best = {key: candidate[key] for key in ("pid", "start", "name", "parent")}
     return best
 
 
@@ -345,13 +381,16 @@ def cap_processes(table, uid, capped, cap=NPROC_CAP):
 
 def watch_sessions(uid, record, stop, proc=PROC, interval=SESSION_SECONDS, name="sessions.json", since=None):
     """Look at the processes of `uid` every `interval` until `stop` is set: keep each exec session's first
-    and last sighting, the first process that began at or after `since`, and the most processes of
-    `uid` seen at once, in `record`, written to STATE/`name` after every look; cap every process of `uid`."""
+    and last sighting, the first process that began at or after `since` (one that two looks at least
+    CONFIRM_SECONDS apart both saw alive; how many were seen once and gone is `first_process_passed_over`),
+    and the most processes of `uid` seen at once, in `record`, written to STATE/`name` after every look;
+    cap every process of `uid`."""
     current = {}   # pid -> its entry, for the sessions alive at the previous look
     entries = []   # the sessions kept, in the order first seen
-    capped, examined = set(), set()
+    capped, examined, sighted = set(), set(), {}
     record.update(available=None, scans=0, last_scan=None, alive=[], seen=0, sessions=[], first_process=None,
-                  user_processes=0, user_processes_max=0, nproc_cap=NPROC_CAP, nproc_cap_failures=0)
+                  first_process_passed_over=0, user_processes=0, user_processes_max=0, nproc_cap=NPROC_CAP,
+                  nproc_cap_failures=0)
     summary_at = 0.0
     while not stop.is_set():
         started = time.time()
@@ -378,7 +417,10 @@ def watch_sessions(uid, record, stop, proc=PROC, interval=SESSION_SECONDS, name=
                 entries = [e for e in entries if id(e) in live or id(e) in keep]
             mine = sum(1 for owner, _parent, _name, state in table.values() if owner == uid and state not in ("Z", "X"))
             if since is not None:
-                record["first_process"] = first_process(table, uid, since, proc, record.get("first_process"), examined)
+                gone = []
+                record["first_process"] = first_process(table, uid, since, proc, record.get("first_process"), examined,
+                                                        sighted, started, gone=gone)
+                record["first_process_passed_over"] += len(gone)
                 if len(examined) > 100_000:
                     examined.intersection_update(table)
             failed = cap_processes(table, uid, capped)
@@ -392,8 +434,8 @@ def watch_sessions(uid, record, stop, proc=PROC, interval=SESSION_SECONDS, name=
         if started - summary_at >= 5:
             summary_at = started
             write(os.path.join("out", "watch.json"), {key: record.get(key) for key in (
-                "available", "last_scan", "first_process", "user_processes", "user_processes_max", "nproc_cap",
-                "nproc_cap_failures")})
+                "available", "last_scan", "first_process", "first_process_passed_over", "user_processes",
+                "user_processes_max", "nproc_cap", "nproc_cap_failures")})
         stop.wait(interval)
 
 
@@ -470,13 +512,17 @@ def live_session(record, fresh=2.0):
     return session_seen(record, fresh) is True
 
 
-def watch(stream, status, ending=end_processes, session_alive=lambda: None, limit=lambda: None):
-    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record, then end the
-    processes of the user when `session_alive()` is False (a fresh look found no session) or the time
-    `limit()` (seconds since the epoch, or None) has come; otherwise that ending waits until one of the
-    two holds. Local polls end nothing.
+def watch(stream, status, ending=end_processes, session_alive=lambda: None, limit=lambda: None, stop_limit=None):
+    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record it, with
+    whether the time `limit()` (the time the work is given ran out, counted from the start of the work;
+    seconds since the epoch, or None) had come (`after_limit`), then end the processes of the user when
+    `session_alive()` is False (a fresh look found no session) or the time `stop_limit()` (counted from the
+    first process of the user, never earlier than `limit()`; None, so never, while no first process is
+    known; `limit` when not given) has come; otherwise that ending waits until one of the two holds. Local
+    polls end nothing.
 
     Returns the openings when the stream ends (it does not while the probe runs)."""
+    stop_limit = stop_limit or limit
     closing = None   # [first start, last start, polls] of the closed stretch in progress
     openings = []
     deferred = None  # the opening whose ending waits
@@ -494,6 +540,10 @@ def watch(stream, status, ending=end_processes, session_alive=lambda: None, limi
 
     def time_up():
         bound = limit()
+        return isinstance(bound, (int, float)) and time.time() >= bound
+
+    def stop_up():
+        bound = stop_limit()
         return isinstance(bound, (int, float)) and time.time() >= bound
 
     for started, state, detail in stream:
@@ -518,16 +568,16 @@ def watch(stream, status, ending=end_processes, session_alive=lambda: None, limi
                               closing=None, openings=openings)
                 write("netcheck-open.json", record)
                 write("netcheck.json", status)
-                if alive is not False and not record["after_limit"]:
+                if alive is not False and not stop_up():
                     record["ending"] = ("waits: an exec session is alive, or the sessions cannot be seen, and the time the "
-                                        "work is given has not run out")
+                                        "work is given, counted from the first process, has not run out")
                     write("netcheck-open.json", record)
                     deferred = record
                 else:
                     end_now(record)
                     deferred = None
             closing = None
-        if deferred is not None and (session_alive() is False or time_up()):
+        if deferred is not None and (session_alive() is False or stop_up()):
             end_now(deferred)
             deferred = None
         status.update(polls=count, local_polls=local_count, longest_local_run=longest_local, last_poll=[started, state],
@@ -669,9 +719,19 @@ def main():
     since = began if began is not None else status["started_at"]
 
     def limit_of():
+        # the end of the work: counted from the start of the work, which the setup hook took before the
+        # clock of the work's own limit began, so that no opening after that limit is taken for a blip
+        return since + WORK_LIMIT_SECONDS
+
+    def stop_of():
+        # ending `dev`: counted from its first process, one that two looks a second apart saw alive, so
+        # never a short command run before that clock, and one that began after the clock of the
+        # work's own limit, so that nothing ends the work before that limit; with no first process seen,
+        # never by time (only once a fresh look finds no session, or at the step that measures the tree)
         first = record.get("first_process")
-        start = first["start"] if isinstance(first, dict) and isinstance(first.get("start"), (int, float)) else since
-        return start + WORK_LIMIT_SECONDS
+        if not (isinstance(first, dict) and isinstance(first.get("start"), (int, float))):
+            return None
+        return max(first["start"], since) + WORK_LIMIT_SECONDS
 
     try:
         uid = pwd.getpwnam(USER).pw_uid
@@ -686,7 +746,7 @@ def main():
         write("netcheck.json", dict(status, error="no host resolved: not checking"))
         while True:   # the processes are still watched; the step that measures the tree stops this
             time.sleep(60)
-    watch(polls(targets, status), status, session_alive=lambda: session_seen(record), limit=limit_of)
+    watch(polls(targets, status), status, session_alive=lambda: session_seen(record), limit=limit_of, stop_limit=stop_of)
     return 0
 
 

@@ -28,7 +28,9 @@ from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIB = os.path.join(HERE, "..", "..", "tests", "verifier", "lib")
-UNITS = os.path.join(HERE, "..", "..", "environment", "data", "units.json")
+UNITS = os.environ.get("RESTORE_UNITS") or os.path.join(
+    HERE, "..", "..", "environment", "data", "units.json"
+)
 
 
 def revive(args):

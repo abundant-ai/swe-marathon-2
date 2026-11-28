@@ -39,8 +39,11 @@ import sys
 from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PRIORITY = {"withheld-direct": 0, "withheld-inner": 1, "variant": 2}
-UNITS = os.path.join(HERE, "..", "..", "environment", "data", "units.json")
+PRIORITY = {"withheld-direct": 0, "withheld-inner": 1, "twin": 2, "variant": 3}
+# the unit list the calls belong to: the task's own, or another build's (RESTORE_UNITS)
+UNITS = os.environ.get("RESTORE_UNITS") or os.path.join(
+    HERE, "..", "..", "environment", "data", "units.json"
+)
 DOMAIN = re.compile(
     r"\b(prime|odd|even|positive|nonnegative|non-negative|negative|natural|nonzero|non-zero|squarefree|"
     r"square-free|greater than|less than|at least|at most|larger than|smaller than|level|power of)\b"

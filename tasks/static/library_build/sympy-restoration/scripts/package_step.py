@@ -27,6 +27,7 @@ REQUIRED_PREPARED = (
     "tests/private/vectors/documented.json",
     "tests/private/unit_bodies.json",
     "tests/private/timing.json",
+    "tests/private/unit_coverage.json",
 )
 REQUIRED_REFERENCE_DIR = "solution/data/sympy"
 # Private lists carry the list and nothing else: no count, note or other key reaches the bundle.
